@@ -1188,6 +1188,7 @@ function filtered(includeTrader=true){
 }
 function calc(list){
   const n=list.length, w=list.filter(t=>t.outcome==='Win'), l=list.filter(t=>t.outcome==='Loss'), be=n-w.length-l.length;
+  const w_=w, l_=l;
   const rs=list.map(t=>+t.r||0), totalR=rs.reduce((a,b)=>a+b,0);
   const gw=rs.filter(x=>x>0).reduce((a,b)=>a+b,0), gl=-rs.filter(x=>x<0).reduce((a,b)=>a+b,0);
   const decided=w.length+l.length;
@@ -1204,7 +1205,23 @@ function calc(list){
     avgConf:(()=>{const c=list.map(t=>+t.confidence).filter(x=>x>0);return c.length?c.reduce((a,b)=>a+b,0)/c.length:null;})(),
     avgHold:(()=>{const h=list.map(holdMin).filter(x=>x!=null);return h.length?h.reduce((a,b)=>a+b,0)/h.length:null;})(),
     avgRiskPct:(()=>{const p=list.map(t=>+t.riskPct).filter(x=>x>0);return p.length?p.reduce((a,b)=>a+b,0)/p.length:null;})(),
-    overRisked:list.filter(t=>+t.riskPct>MYRISK*1.1).length };
+    overRisked:list.filter(t=>+t.riskPct>MYRISK*1.1).length,
+    // Per-trade Sharpe: expectancy divided by how wildly results scatter.
+    sharpe:(()=>{ if(rs.length<2) return null;
+      const m=totalR/rs.length, v=rs.reduce((a,x)=>a+(x-m)**2,0)/(rs.length-1);
+      return v>0 ? m/Math.sqrt(v) : null; })(),
+    // Sortino ignores upside volatility - only losses are the risk.
+    sortino:(()=>{ if(rs.length<2) return null;
+      const m=totalR/rs.length, d=rs.filter(x=>x<0);
+      if(!d.length) return null;
+      const dv=d.reduce((a,x)=>a+x*x,0)/d.length;
+      return dv>0 ? m/Math.sqrt(dv) : null; })(),
+    recovery: dd>0 ? totalR/dd : null,
+    // Kelly: the edge-weighted fraction, given how much wins beat losses by.
+    kelly:(()=>{ const w=w_.length, l=l_.length;
+      if(!w || !l || !avgL) return null;
+      const p=w/(w+l), b=Math.abs(avgW/avgL);
+      return b>0 ? p-(1-p)/b : null; })() };
 }
 function pnlCard(s){
   const e=Object.entries(s.pnlBy);
@@ -1214,6 +1231,122 @@ function pnlCard(s){
 }
 function setScope(v){ SCOPE_TOUCHED=true; $('fTrader').value=v; render(); }
 $('fTrader').addEventListener('change',()=>{ SCOPE_TOUCHED=true; });
+const QCOLOR={'Good Win':'#00E676','Good Loss':'#38BDF8','Bad Win':'#FFBA79','Bad Loss':'#FF334B'};
+
+/** A compact trend line for a KPI tile - shape only, no axes. */
+function sparkline(vals, col){
+  if(vals.length<2) return '';
+  const W=150,H=34, min=Math.min(...vals), max=Math.max(...vals), rng=(max-min)||1;
+  const pts=vals.map((v,i)=>[i/(vals.length-1)*W, H-2-((v-min)/rng)*(H-4)]);
+  const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" aria-hidden="true">`
+    + `<path d="${d} L ${W} ${H} L 0 ${H} Z" fill="${col}" opacity=".12"/>`
+    + `<path d="${d}" fill="none" stroke="${col}" stroke-width="1.6"/></svg>`;
+}
+
+function kpiRow(list, s){
+  const tile = (label, value, vclass, sub, extra='') =>
+    `<div class="kpi"><div class="k-top"><span class="k-l">${label}</span>${extra}</div>`
+    + `<div class="k-v ${vclass}">${value}</div>`
+    + (sub?`<div class="k-sub">${sub}</div>`:'') + '</div>';
+  const bar = (pct, col) =>
+    `<div class="k-bar"><i style="width:${Math.max(0,Math.min(100,pct))}%;background:${col}"></i></div>`;
+  const chip = (txt, col) => `<span class="badge" style="color:${col};border-color:${col}44">${txt}</span>`;
+
+  let run=0; const curveVals=list.map(t=>(run+= +t.r||0));
+  const pnlTxt = Object.entries(s.pnlBy).map(([c,v])=>fmt(v)+' '+esc(c)).join(' · ');
+
+  $('kpis').innerHTML =
+    tile('Net P&amp;L', pnlTxt||'–', cls(s.pnl),
+         `${fmt(s.totalR)}R banked`, '') +
+    tile('Win rate', s.winRate==null?'–':fmt(s.winRate,1)+'%', s.winRate>=50?'pos':'neg',
+         `${s.wins}W / ${s.losses}L / ${s.be}BE` + bar(s.winRate||0, s.winRate>=50?'#00E676':'#FF334B')) +
+    tile('Profit factor', s.pf===Infinity?'∞':fmt(s.pf), s.pf>1?'pos':'neg',
+         `Expectancy ${fmt(s.avgR)}R a trade`,
+         s.pf>=1.5?chip('Stable','#00E676'):s.pf>1?chip('Thin','#FFBA79'):chip('Bleeding','#FF334B')) +
+    tile('Avg risk : reward', s.realRR==null?'–':'1 : '+fmt(s.realRR), '',
+         s.plannedRR==null?'No targets set':`Planned 1:${fmt(s.plannedRR)}`) +
+    tile('Max drawdown', fmt(s.maxDD)+'R', s.maxDD>0?'neg':'',
+         s.recovery==null?'No drawdown yet':`Recovery ${fmt(s.recovery)}x`) +
+    tile('Discipline', s.discipline==null?'–':fmt(s.discipline,0)+'%', s.discipline>=60?'pos':'neg',
+         `${s.q['Good Win']+s.q['Good Loss']}/${s.n} followed the plan`
+         + bar(s.discipline||0, s.discipline>=60?'#00E676':'#FF334B'),
+         s.discipline>=90?chip('Pristine','#00E676'):'');
+
+  // the sparkline belongs to the P&L tile
+  const first=$('kpis').querySelector('.kpi');
+  if(first && curveVals.length>1){
+    first.insertAdjacentHTML('beforeend', sparkline(curveVals, s.totalR>=0?'#00E676':'#FF334B'));
+  }
+  $('curveBadge').textContent = (s.totalR>=0?'+':'') + fmt(s.totalR) + ' R';
+  $('curveStats').innerHTML =
+    `<div class="stat"><div class="l">Sharpe (per trade)</div><div class="v">${fmt(s.sharpe)}</div></div>`
+  + `<div class="stat"><div class="l">Sortino</div><div class="v">${fmt(s.sortino)}</div></div>`
+  + `<div class="stat"><div class="l">Avg hold</div><div class="v">${fmtDur(s.avgHold)}</div></div>`
+  + `<div class="stat"><div class="l">Kelly fraction</div><div class="v">${s.kelly==null?'–':fmt(s.kelly*100,1)+'%'}</div></div>`;
+}
+
+/** Donut of the four quality types - the process score, not the P&L. */
+function qualityDonut(s){
+  if(!s.n){ $('qualDonut').innerHTML=''; $('qual').innerHTML='<span style="color:var(--mut)">No data</span>'; $('directive').innerHTML=''; return; }
+  const R=62, C=2*Math.PI*R, SW=16;
+  let off=0, arcs='';
+  QUALS.forEach(q=>{
+    const share=s.q[q]/s.n; if(!share) return;
+    const len=share*C;
+    arcs += `<circle cx="80" cy="80" r="${R}" fill="none" stroke="${QCOLOR[q]}" stroke-width="${SW}"`
+      + ` stroke-dasharray="${len.toFixed(2)} ${(C-len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}"`
+      + ` transform="rotate(-90 80 80)"><title>${q}: ${s.q[q]}</title></circle>`;
+    off += len;
+  });
+  $('qualDonut').innerHTML =
+    `<svg viewBox="0 0 160 160" width="100%" style="max-width:190px;margin:4px auto 0" role="img" aria-label="Trade quality split">`
+    + `<circle cx="80" cy="80" r="${R}" fill="none" stroke="var(--line)" stroke-width="${SW}"/>${arcs}`
+    + `<text x="80" y="76" text-anchor="middle" style="fill:var(--txt-strong);font-family:var(--font-mono);font-size:26px;font-weight:600">${fmt(s.discipline,0)}%</text>`
+    + `<text x="80" y="94" text-anchor="middle" style="fill:var(--mut-2);font-family:var(--font-mono);font-size:8.5px;letter-spacing:.1em">A+ PROCESS</text></svg>`;
+
+  $('qual').innerHTML = '<div class="qlegend">' + QUALS.map(q=>{
+    const pct = s.n ? s.q[q]/s.n*100 : 0;
+    return `<div class="qrow"><span class="n"><i style="background:${QCOLOR[q]}"></i>${q}</span>`
+      + `<span class="p" style="color:${QCOLOR[q]}">${fmt(pct,1)}% <span style="color:var(--mut-2)">(${s.q[q]})</span></span>`
+      + `<span class="bar"><i style="width:${pct}%;background:${QCOLOR[q]}"></i></span></div>`;
+  }).join('') + '</div>';
+}
+
+/** One concrete, costed instruction - not a restatement of the chart. */
+function renderDirective(list, s){
+  const bad = list.filter(t => t.quality==='Bad Loss' || t.quality==='Bad Win');
+  if(!bad.length){
+    $('directive').innerHTML = '<span class="h">Execution directive</span>'
+      + 'Every trade in this view followed your plan. Nothing to strip out.';
+    return;
+  }
+  const badR = bad.reduce((a,t)=>a+(+t.r||0),0);
+  const badMoney = bad.reduce((a,t)=>a+(+t.pnl||0),0);
+  const cleanR = s.totalR - badR;
+  $('directive').innerHTML = '<span class="h">Execution directive</span>'
+    + `<b>${bad.length}</b> of ${s.n} trades broke your plan, costing `
+    + `<b class="${cls(badR)}">${fmt(badR)}R</b>`
+    + (badMoney ? ` (<b class="${cls(badMoney)}">${fmt(badMoney)} ${esc(Object.keys(s.pnlBy)[0]||'')}</b>)` : '')
+    + `. Remove them and this view reads <b class="${cls(cleanR)}">${fmt(cleanR)}R</b> instead of `
+    + `<b class="${cls(s.totalR)}">${fmt(s.totalR)}R</b>.`;
+}
+
+/** The most recent executions, dense, newest first. */
+function renderBlotter(list){
+  const rows = [...list].reverse().slice(0, 6);
+  $('blotterCount').textContent = list.length ? `Showing ${rows.length} of ${list.length}` : '';
+  if(!rows.length){ $('blotter').innerHTML='<span style="color:var(--mut)">No executions in this view</span>'; return; }
+  $('blotter').innerHTML = '<table><tr><th>Date</th><th>Instrument</th><th>Strategy</th><th>Plan</th><th>PnL</th><th>R</th><th>Quality</th></tr>'
+    + rows.map(t=>`<tr><td>${esc(t.date)}</td>`
+      + `<td>${esc(t.instrument)} <span class="pill ${t.direction==='Long'?'Win':'Loss'}">${t.direction==='Long'?'Long':'Short'}</span></td>`
+      + `<td>${esc(t.strategy)}</td><td>${t.plannedRR===''?'–':'1:'+t.plannedRR}</td>`
+      + `<td class="${cls(t.pnl)}">${t.pnl===''?'–':fmt(t.pnl)}</td>`
+      + `<td class="${cls(t.r)}">${t.r>0?'+':''}${fmt(t.r)}R</td>`
+      + `<td><span class="pill ${key(t.quality)}">${esc(t.quality)}</span></td></tr>`).join('')
+    + '</table>';
+}
+
 function renderScope(){
   const cur=$('fTrader').value, btn=(v,l,c='')=>`<button type="button" class="${c}${cur===v?' on':''}" data-scope="${esc(v)}" aria-pressed="${cur===v}">${l}</button>`;
   const others=[...new Set([...MEMBERS,...ALL.map(t=>t.trader)])].filter(m=>m&&m!==ME).sort();
@@ -1260,13 +1393,20 @@ function render(){
     c('Avg hold time',fmtDur(s.avgHold)) +
     c('Avg risk per trade',s.avgRiskPct==null?'–':fmt(s.avgRiskPct,2)+'%',s.avgRiskPct>MYRISK*1.1?'neg':'') +
     c('Over your risk plan',s.overRisked,s.overRisked?'neg':'pos');
+  kpiRow(list, s);
   drawCurve(list);
   trend(list);
-  qualTable(s);
+  qualityDonut(s); renderDirective(list, s); renderBlotter(list);
   group('byInstr',list,t=>t.instrument,'Instrument');
   const allV=$('fTrader').value==='__ALL__';
   group('byStrat',list,t=>(t.strategy||'(none)')+(allV?' · '+t.trader:''),'Strategy');
   playbook();
+  (function(){
+    const rows = STRATS.filter(x=>$('fTrader').value==='__ALL__'||x.trader===$('fTrader').value)
+      .map(x=>({name:x.name, ...calc(list.filter(t=>t.trader===x.trader&&t.strategy===x.name))}))
+      .filter(x=>x.n).sort((a,b)=>b.totalR-a.totalR);
+    $('topAlpha').textContent = rows.length ? 'Top alpha: ' + rows[0].name : '';
+  })();
   group('bySess',list,t=>t.session||'Not set','Session',true);
   group('byConf',list,t=>CONF[+t.confidence]||'Not rated','Confidence',true);
   group('byTrail',list,t=>t.trailed==='Yes'?'Trailed SL':'Fixed SL','Type');
@@ -1317,11 +1457,6 @@ function playbook(){
     const st=calc(fl.filter(t=>t.trader===s.trader&&t.strategy===s.name));
     return `<div class="pb-item"><div class="pb-top"><span><b>${esc(s.name)}</b>${all?`<span class="tag">${esc(s.trader)}</span>`:''}</span><span class="pb-meta">${st.n} trades · ${st.winRate==null?'–':fmt(st.winRate,0)+'% win'} · <span class="${cls(st.totalR)}">${fmt(st.totalR)}R</span> · ${st.discipline==null?'–':fmt(st.discipline,0)+'% good'}</span></div><div class="pb-desc">${esc(s.description)||'<span class="hint">No description</span>'}</div></div>`;
   }).join('')+'</div>' : '<span style="color:var(--mut)">No strategies written yet. Add yours in the My Setup tab.</span>';
-}
-function qualTable(s){
-  const rows=QUALS.map(k=>`<tr><td><span class="pill ${key(k)}">${k}</span></td><td>${s.q[k]}</td><td>${s.n?fmt(s.q[k]/s.n*100,0)+'%':'–'}</td></tr>`).join('');
-  $('qual').innerHTML=`<table><tr><th>Type</th><th>Trades</th><th>Share</th></tr>${rows}</table>
-  <div class="hint" style="margin-top:8px">Good = followed your plan/rules, Bad = broke them. Discipline % = (Good Win + Good Loss) ÷ trades.</div>`;
 }
 const CONF={1:'1 – Strongly disagree',2:'2 – Disagree',3:'3 – Neutral',4:'4 – Agree',5:'5 – Strongly agree'};
 function group(el,list,keyFn,title,byKey){
