@@ -40,22 +40,33 @@ export async function getBootstrap(bearer: string | undefined) {
   const me = who.profile;
   const supabase = db();
 
+  /*
+   * Only the owner and admins see the desk. An ordinary member's payload
+   * carries nobody else's trades at all, rather than being filtered in the
+   * browser - hiding another trader's record behind a UI flag would leave it
+   * one devtools tab away.
+   */
+  const canSeeTeam = me.role === 'admin' || me.role === 'superadmin';
+  const mine = <T extends { eq: (c: string, v: string) => T }>(q: T) => (canSeeTeam ? q : q.eq('user_id', me.id));
+
   const [tradeRows, instrRows, stratRows, memberRows, fundRows] = await Promise.all([
     fetchAll<TradeRow>(() =>
-      supabase.from('trades').select('*, trader:users!inner(username)').order('trade_date', { ascending: true })),
+      mine(supabase.from('trades').select('*, trader:users!inner(username)').order('trade_date', { ascending: true }))),
     fetchAll<{
       name: string; broker: string | null; pip_size: number | null; value_per_pip: number | null;
       lot_step: number | null; commission_per_lot: number | null; trader: { username: string } | null;
-    }>(() => supabase
+    }>(() => mine(supabase
       .from('instruments')
-      .select('name, broker, pip_size, value_per_pip, lot_step, commission_per_lot, trader:users!inner(username)')),
+      .select('name, broker, pip_size, value_per_pip, lot_step, commission_per_lot, trader:users!inner(username)'))),
     fetchAll<{
       name: string; description: string; rules: string[] | null; pois: string[] | null;
       trader: { username: string } | null;
-    }>(() => supabase
-      .from('strategies').select('name, description, rules, pois, trader:users!inner(username)')),
-    fetchAll<{ username: string }>(() =>
-      supabase.from('users').select('username').eq('disabled', false)),
+    }>(() => mine(supabase
+      .from('strategies').select('name, description, rules, pois, trader:users!inner(username)'))),
+    fetchAll<{ username: string }>(() => {
+      const q = supabase.from('users').select('username').eq('disabled', false);
+      return canSeeTeam ? q : q.eq('id', me.id);
+    }),
     fetchAll<{ id: string; entry_date: string; type: string; amount: string; currency: string; note: string }>(() =>
       supabase.from('funds').select('id, entry_date, type, amount, currency, note').eq('user_id', me.id)),
   ]);
@@ -63,6 +74,7 @@ export async function getBootstrap(bearer: string | undefined) {
   return {
     me: me.username,
     role: me.role,
+    canSeeTeam,
     email: me.email,
     tz: me.timezone || '',
     ccy: me.currency || '',

@@ -498,6 +498,12 @@
   .fs-sub{font-size:11.5px;color:var(--mut-2)}
   .formsec .rulebox{margin-top:4px}
 
+  /* ---------------- team data is admin-only ---------------- */
+  .team-only{display:none}
+  body.can-team .team-only{display:block}
+  body.can-team .field.team-only{display:flex}
+  #teamToggle{align-self:flex-end}
+
   /* ---------------- instrument / strategy / POI markers ---------------- */
   .vtag{
     display:inline-block;padding:2px 7px;border-radius:2px;
@@ -1047,9 +1053,10 @@
         <div class="crumb">Desk telemetry &middot; <b id="crumbScope">Whole team</b></div>
         <h1>Executive Cockpit</h1>
       </div>
+      <button type="button" class="ghost small" id="teamToggle" hidden>Hide team data</button>
     </div>
   <!-- VIEW SWITCHER: team or any member -->
-  <section class="card scope-card">
+  <section class="card scope-card team-only">
     <div class="scope-head"><h2>Dashboard view</h2><span class="hint" style="margin:0">Team-wide, just you, or any member &mdash; every number below follows this switch</span></div>
     <div class="scope" id="scope" role="group" aria-label="Dashboard view"></div>
   </section>
@@ -1058,7 +1065,7 @@
   <section class="card card-filters">
     <h2>Filters</h2>
     <div class="filters-grid">
-      <div class="field"><label for="fTrader">View</label><select id="fTrader"><option value="__ALL__">Overall (whole team)</option></select></div>
+      <div class="field team-only"><label for="fTrader">View</label><select id="fTrader"><option value="__ALL__">Overall (whole team)</option></select></div>
       <div class="field"><label for="fFrom">From</label><input type="date" id="fFrom"></div>
       <div class="field"><label for="fTo">To</label><input type="date" id="fTo"></div>
       <div class="field"><label for="fInstr">Instrument</label><select id="fInstr"><option value="">All</option></select></div>
@@ -1125,7 +1132,7 @@
   </section>
 
   <!-- YOU vs TEAM -->
-  <section class="card" id="vsCard" hidden><h2 id="vsTitle">You vs team</h2><div class="scroll" id="vsTeam"></div></section>
+  <section class="card team-only" id="vsCard" hidden><h2 id="vsTitle">You vs team</h2><div class="scroll" id="vsTeam"></div></section>
 
   <!-- PSYCHOLOGY / IMPROVEMENT (featured) -->
   <section class="card card-focus">
@@ -1139,7 +1146,7 @@
   </section>
 
 
-  <section class="card"><h2>Team members &mdash; side by side <span class="hint" style="text-transform:none;letter-spacing:0;font-weight:400">(click a member to open their dashboard)</span></h2><div class="scroll" id="board"></div></section>
+  <section class="card team-only"><h2>Team members &mdash; side by side <span class="hint" style="text-transform:none;letter-spacing:0;font-weight:400">(click a member to open their dashboard)</span></h2><div class="scroll" id="board"></div></section>
 
   <div class="two">
     <div class="card"><h2>By instrument</h2><div class="scroll" id="byInstr"></div></div>

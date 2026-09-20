@@ -314,6 +314,21 @@ lib/
 supabase/migrations/       the schema
 ```
 
+### Who sees the desk
+
+Trades, instruments and strategies used to go to every signed-in member. They
+now go only to the owner and to admins. An ordinary member's payload contains
+nobody else's rows at all, and screenshots are checked the same way, since the
+storage path begins with the uploader's id.
+
+That gate is server-side on purpose. Hiding another trader's record behind a UI
+flag would leave it one devtools tab away, and the browser flag exists only to
+stop the page offering views with nothing behind them.
+
+Admins also get a **Hide team data** button, which collapses the desk views to
+their own trading and is remembered per browser. It sits in the page header
+rather than inside the card it hides, so it can always be used to switch back.
+
 ### Security model
 
 - The browser only ever talks to `/api/rpc`. It sends the Supabase access token

@@ -6,7 +6,14 @@ const EXITS = ['Target hit','Ran past target','Trailed stop hit','Stopped out','
 const INSTRUMENT_GROUPS = ['FX majors','FX yen pairs','Metals','Indices','Crypto'];
 const MISTAKES = ['Chased entry','Entered early','No setup','Moved stop','Oversized','Closed early','Held too long','Revenge trade','Overtraded'];
 const EMOTIONS = ['Calm','Confident','FOMO','Anxious','Frustrated','Bored','Tilted','Distracted'];
-let PICKED = [], EDITING = null, PENDING_EMAIL = '';                    // mistake tags, and the trade being edited
+let PICKED = [], EDITING = null, PENDING_EMAIL = '';   // mistake tags, and the trade being edited
+
+// localStorage throws outright in some privacy modes, so never let it take the page down.
+const lsGet = k => { try{ return localStorage.getItem(k) || ''; }catch(e){ return ''; } };
+const lsSet = (k,v) => { try{ v ? localStorage.setItem(k,v) : localStorage.removeItem(k); }catch(e){} };
+
+let CAN_TEAM = false;                 // granted by the server, never assumed here
+let TEAM_HIDDEN = lsGet('tj_team_hidden') === '1';   // an admin's own preference
 let MYRISK = 1;                                     // planned risk per trade, % of equity
 let MYBROKER = '';                                  // whose pip settings we are using
 let SIZE_SRC = 'lots';                              // which of lots / risk the trader last typed
@@ -138,7 +145,7 @@ function fail(e){ const m = msgOf(e); if(/AUTH/.test(m)) signOut(); else alert(m
 
 /* -------------------------------------------------------------- session UI */
 function lock(){
-  ME=''; ROLE='user'; BOOTED=false; ALL=[]; FUNDS=[]; INSTR=[]; STRATS=[]; MEMBERS=[]; SCOPE_TOUCHED=false;
+  ME=''; ROLE='user'; CAN_TEAM=false; applyTeamVisibility(); BOOTED=false; ALL=[]; FUNDS=[]; INSTR=[]; STRATS=[]; MEMBERS=[]; SCOPE_TOUCHED=false;
   $('me').value=''; $('meName').textContent='';
   document.body.classList.add('locked');
   document.body.classList.remove('onboarding','is-admin');
@@ -321,6 +328,8 @@ function load(){
   return api('getBootstrap').then(d => {
     if(d.needsOnboarding) return showOnboarding(d);
     ME=d.me; ROLE=d.role||'user'; $('me').value=ME; $('meName').textContent=ME;
+    CAN_TEAM = !!d.canSeeTeam;
+    applyTeamVisibility();
     document.body.classList.toggle('is-admin', ROLE==='admin'||ROLE==='superadmin');
     const wasLocked = document.body.classList.contains('locked');
     document.body.classList.remove('locked','onboarding');
@@ -328,7 +337,7 @@ function load(){
     MYCCY=d.ccy||guessCcy(); if(!d.ccy) api('saveCurrency',MYCCY).catch(()=>{});
     ALL=d.trades; FUNDS=d.funds||[]; INSTR=d.instruments; STRATS=d.strategies; MEMBERS=d.members||[];
     fillForm(); fillFilters();
-    if(!SCOPE_TOUCHED){ $('fTrader').value = ALL.some(t=>t.trader===ME) ? ME : '__ALL__'; }
+    if(!SCOPE_TOUCHED){ $('fTrader').value = (CAN_TEAM && !TEAM_HIDDEN && !ALL.some(t=>t.trader===ME)) ? '__ALL__' : ME; }
     MYRISK=+d.riskPct||1;
     MYBROKER=d.broker||''; BROKERS=d.brokers||[]; POIS=d.pois||[]; fillBrokers();
     fillTz(); fillCcy(); fillExitReason(); fillEmotions(); renderMistakes(); renderRules(); fillPois();
@@ -354,7 +363,8 @@ function fillForm(sel){
 }
 function fillFilters(){
   const keep=(el,vals,first)=>{const c=el.value; el.innerHTML=first+[...new Set(vals)].filter(Boolean).sort().map(v=>`<option>${esc(v)}</option>`).join(''); if([...el.options].some(o=>o.value===c)) el.value=c;};
-  keep($('fTrader'), [...MEMBERS,...ALL.map(t=>t.trader)], '<option value="__ALL__">Overall (whole team)</option>');
+  keep($('fTrader'), (CAN_TEAM && !TEAM_HIDDEN) ? [...MEMBERS,...ALL.map(t=>t.trader)] : [ME],
+    (CAN_TEAM && !TEAM_HIDDEN) ? '<option value="__ALL__">Overall (whole team)</option>' : '');
   keep($('fPoi'), ALL.map(t=>t.poi), '<option value="">All</option><option value="__none">Not recorded</option>');
   keep($('fEmotion'), ALL.map(t=>t.emotion), '<option value="">All</option><option value="__none">Not recorded</option>');
   keep($('fMistake'), ALL.flatMap(t=>t.mistakes||[]), '<option value="">All</option><option value="__none">Clean trades only</option>');
@@ -1429,13 +1439,35 @@ function renderBlotter(list){
     + '</table>';
 }
 
+/**
+ * Team views appear only for admins, and only while they have them showing.
+ * The flag comes from the server, which has already withheld the data itself -
+ * this just keeps the page from offering views with nothing behind them.
+ */
+function applyTeamVisibility(){
+  const on = CAN_TEAM && !TEAM_HIDDEN;
+  document.body.classList.toggle('can-team', on);
+  $('teamToggle').textContent = TEAM_HIDDEN ? 'Show team data' : 'Hide team data';
+  $('teamToggle').hidden = !CAN_TEAM;
+  if(!on && $('fTrader').value !== ME){ $('fTrader').value = ME; SCOPE_TOUCHED = true; }
+}
+$('teamToggle').onclick = () => {
+  TEAM_HIDDEN = !TEAM_HIDDEN;
+  lsSet('tj_team_hidden', TEAM_HIDDEN ? '1' : '');
+  applyTeamVisibility();
+  fillFilters();          // the View list must not keep offering hidden members
+  render();
+};
+
 function renderScope(){
+  if(!CAN_TEAM || TEAM_HIDDEN){ $('scope').innerHTML=''; return; }
   const cur=$('fTrader').value, btn=(v,l,c='')=>`<button type="button" class="${c}${cur===v?' on':''}" data-scope="${esc(v)}" aria-pressed="${cur===v}">${l}</button>`;
   const others=[...new Set([...MEMBERS,...ALL.map(t=>t.trader)])].filter(m=>m&&m!==ME).sort();
   $('scope').innerHTML = btn('__ALL__','&#128101; Team') + btn(ME,'&#128100; Me ('+esc(ME)+')','me') + others.map(m=>btn(m,esc(m))).join('');
   $('scope').querySelectorAll('[data-scope]').forEach(b=>b.onclick=()=>setScope(b.dataset.scope));
 }
 function vsTeam(){
+  if(!CAN_TEAM || TEAM_HIDDEN){ $('vsCard').hidden=true; return; }
   const tr=$('fTrader').value;
   if(tr==='__ALL__'){ $('vsCard').hidden=true; return; }
   const all=filtered(false), mine=calc(all.filter(t=>t.trader===tr)), team=calc(all);
@@ -1656,6 +1688,7 @@ function poiStrategyTable(list){
 }
 
 function leaderboard(){
+  if(!CAN_TEAM || TEAM_HIDDEN){ $('board').innerHTML=''; return; }
   const list=filtered(false), sel=$('fTrader').value, g={};
   [...new Set([...MEMBERS,...list.map(t=>t.trader)])].forEach(m=>g[m]=[]);
   list.forEach(t=>g[t.trader].push(t));

@@ -70,9 +70,14 @@ export async function removeObjects(paths: string[]) {
  * trade can be read, which matches the original journal's rule.
  */
 export async function getScreenshot(bearer: string | undefined, rawPath: unknown) {
-  await requireProfile(bearer);
+  const who = await requireProfile(bearer);
   const path = String(rawPath || '');
   if (!PATH_RE.test(path)) throw new AppError('Screenshot not found.', 404);
+
+  // Every path starts with the uploader's id, so ownership is readable from it
+  // without another query. Members see only their own charts; admins see all.
+  const canSeeTeam = who.profile.role === 'admin' || who.profile.role === 'superadmin';
+  if (!canSeeTeam && !ownsPath(who.id, path)) throw new AppError('Screenshot not found.', 404);
 
   const { data: owner, error: ownErr } = await db()
     .from('trades').select('id').contains('screenshots', [path]).limit(1);
