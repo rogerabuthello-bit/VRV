@@ -2,6 +2,31 @@ let ALL = [], INSTR = [], STRATS = [];
 
 const QUALS = ['Good Win','Bad Win','Good Loss','Bad Loss'];
 const EXITS = ['Target hit','Ran past target','Trailed stop hit','Stopped out','Manual close'];
+let MYRISK = 1;                                     // planned risk per trade, % of equity
+const specOf = name => INSTR.find(i => i.trader===ME && i.name===name) || null;
+const hasSpec = sp => !!(sp && sp.pipSize>0 && sp.valuePerPip>0);
+// Must stay in step with riskOfPosition()/lotsForRisk() in lib/util.ts.
+function riskOfPosition(entry, sl, lots, sp){
+  if(!hasSpec(sp) || !(lots>0)) return null;
+  const pips = Math.abs(entry-sl)/sp.pipSize;
+  if(!isFinite(pips) || pips<=0) return null;
+  return Math.round(pips*sp.valuePerPip*lots*100)/100;
+}
+function lotsForRisk(entry, sl, riskMoney, sp){
+  if(!hasSpec(sp) || !(riskMoney>0)) return null;
+  const step = sp.lotStep>0 ? sp.lotStep : 0.01;
+  const pips = Math.abs(entry-sl)/sp.pipSize;
+  if(!isFinite(pips) || pips<=0) return null;
+  // Settle the division before flooring: see lotsForRisk() in lib/util.ts.
+  const lots = Math.floor(+((riskMoney/(pips*sp.valuePerPip))/step).toFixed(9))*step;
+  const dp = Math.max(0, Math.ceil(-Math.log10(step)));
+  return lots>0 ? +lots.toFixed(dp) : 0;
+}
+/** Equity in one currency, from the same figures the dashboard shows. */
+function equityIn(ccy){
+  const row = equityInfo().find(o => o.c === ccy);
+  return row ? row.bal : 0;
+}
 const EXIT_TOL_R = 0.05;
 // Must stay in step with detectExitReason() in lib/util.ts.
 function detectExit(o){
@@ -256,7 +281,8 @@ function load(){
     ALL=d.trades; FUNDS=d.funds||[]; INSTR=d.instruments; STRATS=d.strategies; MEMBERS=d.members||[];
     fillForm(); fillFilters();
     if(!SCOPE_TOUCHED){ $('fTrader').value = ALL.some(t=>t.trader===ME) ? ME : '__ALL__'; }
-    fillTz(); fillCcy(); fillExitReason(); render(); renderSetup();
+    MYRISK=+d.riskPct||1; if(!$('calcPct').value) $('calcPct').value=MYRISK;
+    fillTz(); fillCcy(); fillExitReason(); render(); renderSetup(); syncRiskFromLots(); renderCalc();
     if(wasLocked) showTab('dash');
   });
 }
@@ -476,6 +502,8 @@ function renderSetup(){
     if(!confirm('Remove '+b.dataset.inst+' from your list? Past trades are kept.')) return;
     api('removeInstrument',b.dataset.inst).then(load).catch(fail);
   });
+  renderInstrSpecs();
+  $('setRisk').value=MYRISK;
   const ss=myStratObjs();
   $('myStratList').innerHTML = ss.length ? ss.map(s=>{
     const st=calc(ALL.filter(t=>t.trader===ME&&t.strategy===s.name));
@@ -492,6 +520,29 @@ function renderSetup(){
     api('removeStrategy',b.dataset.del).then(load).catch(fail);
   });
 }
+
+function renderInstrSpecs(){
+  const ins=INSTR.filter(i=>i.trader===ME).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  if(!ins.length){ $('instrSpecs').innerHTML=''; return; }
+  $('instrSpecs').innerHTML='<table class="spec-tbl"><tr><th>Instrument</th><th>Pip size</th><th>Value per pip (1 lot)</th><th>Lot step</th><th></th></tr>'
+    + ins.map(i=>`<tr><td><b>${esc(i.name)}</b></td>`
+        + `<td><input type="number" step="any" min="0" data-sp="pip" data-for="${esc(i.name)}" value="${i.pipSize??''}" placeholder="0.0001"></td>`
+        + `<td><input type="number" step="any" min="0" data-sp="val" data-for="${esc(i.name)}" value="${i.valuePerPip??''}" placeholder="10"></td>`
+        + `<td><input type="number" step="any" min="0" data-sp="step" data-for="${esc(i.name)}" value="${i.lotStep??0.01}"></td>`
+        + `<td><button type="button" class="ghost small" data-spsave="${esc(i.name)}">Save</button> <span class="hint" data-spmsg="${esc(i.name)}"></span></td></tr>`).join('')
+    + '</table>';
+  $('instrSpecs').querySelectorAll('[data-spsave]').forEach(b=>b.onclick=()=>{
+    const n=b.dataset.spsave, pick=k=>$('instrSpecs').querySelector(`[data-sp="${k}"][data-for="${CSS.escape(n)}"]`).value;
+    const msg=$('instrSpecs').querySelector(`[data-spmsg="${CSS.escape(n)}"]`);
+    msg.textContent='Saving…';
+    api('saveInstrumentSpec',n,{pipSize:pick('pip'),valuePerPip:pick('val'),lotStep:pick('step')})
+      .then(()=>{ msg.textContent='Saved'; return load(); })
+      .catch(e=>{ msg.textContent=msgOf(e); });
+  });
+}
+$('setRiskSave').onclick=()=>{
+  api('saveRiskPct',$('setRisk').value).then(p=>{ MYRISK=p; $('calcPct').value=p; $('setRiskMsg').textContent='Saved: '+p+'% per trade'; renderCalc(); render(); }).catch(fail);
+};
 
 // ---- equity (deposits / withdrawals + trade PnL) ----
 function equityInfo(){
@@ -590,6 +641,74 @@ function updateExitHint(){
 }
 $('xreason').addEventListener('change', updateExitHint);
 
+function renderCalc(){
+  const name=$('instr').value, sp=specOf(name), ccy=$('ccy').value||MYCCY;
+  const entry=+$('entry').value, sl=+$('sl').value, tp=$('tp').value===''?null:+$('tp').value;
+  const pct=+$('calcPct').value || MYRISK;
+  const out=$('calcOut'), note=$('calcNote');
+  const cell=(l,v,k='',lead=false)=>`<div class="stat${lead?' lead':''}"><div class="l">${l}</div><div class="v ${k}">${v}</div></div>`;
+
+  if(!name){ out.innerHTML=''; note.textContent='Pick an instrument to size a position.'; return; }
+  if(!hasSpec(sp)){
+    out.innerHTML='';
+    note.innerHTML=`Set the pip size and value per pip for <b>${esc(name)}</b> in <button type="button" class="link-btn" data-goto="setup">My Setup</button> and this will size every trade for you.`;
+    note.querySelectorAll('[data-goto]').forEach(b=>b.onclick=()=>{ showTab('setup'); window.scrollTo({top:0}); });
+    return;
+  }
+  if(!$('entry').value || !$('sl').value || entry===sl){
+    out.innerHTML=''; note.textContent='Fill entry and initial SL to size the position.'; return;
+  }
+
+  const equity=equityIn(ccy);
+  const stopPips=Math.abs(entry-sl)/sp.pipSize;
+  const riskMoney=equity>0 ? equity*pct/100 : 0;
+  const lots=lotsForRisk(entry,sl,riskMoney,sp);
+  const m=v=>fmt(v)+' '+esc(ccy);
+
+  if(equity<=0){
+    out.innerHTML=cell('Stop distance',fmt(stopPips,1)+' pips');
+    note.innerHTML='Record your starting deposit in <b>My Setup</b> and this will work out the lot size for you.';
+    return;
+  }
+
+  let html = cell('Suggested lots', lots>0?fmt(lots,2):'too small', lots>0?'':'neg', true)
+    + cell('Risking', m(riskMoney)) + cell('Stop distance', fmt(stopPips,1)+' pips')
+    + cell('Equity', m(equity));
+  if(tp!==null && isFinite(tp)){
+    const rewardPips=Math.abs(tp-entry)/sp.pipSize;
+    html += cell('Target reward', m(rewardPips*sp.valuePerPip*(lots||0)))
+          + cell('Planned R:R', '1:'+fmt(rewardPips/stopPips));
+  }
+  out.innerHTML=html;
+
+  const typed=+$('lots').value;
+  if(typed>0){
+    const actual=riskOfPosition(entry,sl,typed,sp);
+    const actualPct=equity>0 ? actual/equity*100 : null;
+    const over=actualPct!=null && actualPct > pct*1.1;
+    note.innerHTML = `You entered <b>${fmt(typed,2)}</b> lots = <b class="${over?'neg':''}">${m(actual)}</b>`
+      + (actualPct!=null?` (<b class="${over?'neg':''}">${fmt(actualPct,2)}%</b> of equity)`:'')
+      + (over?' &mdash; over your plan.':'');
+  } else {
+    note.innerHTML = lots>0
+      ? `Type <b>${fmt(lots,2)}</b> in the lot size box, or your own number to check it.`
+      : `Even ${fmt(sp.lotStep,2)} lots would risk more than ${fmt(pct,2)}% here. Widen the stop or lower the size.`;
+  }
+}
+
+/** Keeps the risk amount in step with the lot size the trader typed. */
+function syncRiskFromLots(){
+  const sp=specOf($('instr').value), lots=+$('lots').value;
+  const entry=+$('entry').value, sl=+$('sl').value;
+  const r = ($('entry').value && $('sl').value) ? riskOfPosition(entry,sl,lots,sp) : null;
+  if(r!=null){ $('risk').value=r; $('risk').readOnly=true; $('lotsHint').textContent='Risk worked out from this size'; }
+  else { $('risk').readOnly=false; $('lotsHint').textContent = hasSpec(sp) ? 'Fill entry and initial SL' : "Set this instrument's pip value in My Setup"; }
+  preview();
+}
+['lots','calcPct'].forEach(id=>$(id).addEventListener('input',()=>{ syncRiskFromLots(); renderCalc(); }));
+['entry','sl','tp','instr','ccy'].forEach(id=>$(id).addEventListener('input',()=>{ syncRiskFromLots(); renderCalc(); }));
+$('instr').addEventListener('change',()=>{ syncRiskFromLots(); renderCalc(); });
+
 function updateQuality(){
   const o=calcLive(); const cur=$('quality').value;
   let opts=QUALS;
@@ -602,11 +721,11 @@ function updateQuality(){
 $('add').onclick = () => {
   const t={date:$('date').value,time:$('ttime').value,closeTime:$('xtime').value,closeDate:$('xdate').value,timezone:$('tz').value,currency:$('ccy').value,session:$('sess').value,instrument:$('instr').value,strategy:$('strat').value,direction:$('dir').value,
     entry:$('entry').value,sl:$('sl').value,finalSl:$('fsl').value,tp:$('tp').value,exit:$('exit').value,
-    risk:$('risk').value,confidence:$('conf').value,exitReason:$('xreason').value,shots:SHOTS,quality:$('quality').value,notes:$('notes').value};
+    risk:$('risk').value,lots:$('lots').value,confidence:$('conf').value,exitReason:$('xreason').value,shots:SHOTS,quality:$('quality').value,notes:$('notes').value};
   $('add').disabled=true; $('msg').textContent=SHOTS.length?'Uploading screenshots…':'Saving…';
   uploadShots(SHOTS).then(paths=>{ t.shots=paths; if(paths.length) $('msg').textContent='Saving trade…'; return api('addTrade',t); }).then(r=>{
     $('add').disabled=false; $('msg').textContent=`Saved: ${r.outcome} ${fmt(r.r)}R${r.trailed==='Yes'?' (trailed)':''} · ${r.session}`;
-    ['entry','sl','fsl','tp','exit','risk','notes'].forEach(i=>$(i).value=''); $('quality').value=''; $('ttime').value=''; $('xtime').value=''; $('xdate').value=''; $('xreason').value=''; $('sess').value=''; setConf(''); SHOTS=[]; renderThumbs(); preview(); tzPreview(); load().catch(fail);
+    ['entry','sl','fsl','tp','exit','risk','lots','notes'].forEach(i=>$(i).value=''); $('quality').value=''; $('ttime').value=''; $('xtime').value=''; $('xdate').value=''; $('xreason').value=''; $('sess').value=''; setConf(''); SHOTS=[]; renderThumbs(); preview(); tzPreview(); load().catch(fail);
   }).catch(e=>{ $('add').disabled=false; const m=(e&&e.message)||String(e); if(/AUTH/.test(m)) return fail(e); $('msg').textContent='Error: '+m; });
 };
 function del(id){
@@ -640,7 +759,9 @@ function calc(list){
     plannedRR:planned.length?planned.reduce((a,b)=>a+b,0)/planned.length:null, maxDD:dd,
     q, discipline:n?good/n*100:null, trailed:list.filter(t=>t.trailed==='Yes').length,
     avgConf:(()=>{const c=list.map(t=>+t.confidence).filter(x=>x>0);return c.length?c.reduce((a,b)=>a+b,0)/c.length:null;})(),
-    avgHold:(()=>{const h=list.map(holdMin).filter(x=>x!=null);return h.length?h.reduce((a,b)=>a+b,0)/h.length:null;})() };
+    avgHold:(()=>{const h=list.map(holdMin).filter(x=>x!=null);return h.length?h.reduce((a,b)=>a+b,0)/h.length:null;})(),
+    avgRiskPct:(()=>{const p=list.map(t=>+t.riskPct).filter(x=>x>0);return p.length?p.reduce((a,b)=>a+b,0)/p.length:null;})(),
+    overRisked:list.filter(t=>+t.riskPct>MYRISK*1.1).length };
 }
 function pnlCard(s){
   const e=Object.entries(s.pnlBy);
@@ -693,7 +814,9 @@ function render(){
     c('Discipline (good trades)',s.discipline==null?'–':fmt(s.discipline,0)+'%',s.discipline>=60?'pos':'neg') +
     c('Trades with trailed SL',s.trailed) +
     c('Avg confidence (1-5)',s.avgConf==null?'–':fmt(s.avgConf,1)) +
-    c('Avg hold time',fmtDur(s.avgHold));
+    c('Avg hold time',fmtDur(s.avgHold)) +
+    c('Avg risk per trade',s.avgRiskPct==null?'–':fmt(s.avgRiskPct,2)+'%',s.avgRiskPct>MYRISK*1.1?'neg':'') +
+    c('Over your risk plan',s.overRisked,s.overRisked?'neg':'pos');
   drawCurve(list);
   trend(list);
   qualTable(s);
@@ -779,8 +902,8 @@ function leaderboard(){
 }
 function tradesTable(list){
   const me=$('me').value.trim().toLowerCase(), rows=[...list].reverse();
-  $('tbl').innerHTML=rows.length?`<table><tr><th>Date</th><th>Time (UTC)</th><th>Time (${esc(MYTZ)})</th><th>Closed (${esc(MYTZ)})</th><th>Held</th><th>Session</th><th>Trader</th><th>Instrument</th><th>Dir</th><th>Strategy</th><th>Entry</th><th>Init SL</th><th>Final SL</th><th>Init TP</th><th>Exit</th><th>How it ended</th><th>Plan RR</th><th>R</th><th>PnL</th><th>Result</th><th>Quality</th><th>Conf</th><th>Shots</th><th>Notes</th><th></th></tr>`+
-    rows.map(t=>`<tr><td>${esc(t.date)}</td><td>${fmtIn(t.openedUtc,'UTC',false)}</td><td title="Trader's own time: ${esc(fmtIn(t.openedUtc,t.timezone||'UTC',false))} ${esc(t.timezone)}">${fmtIn(t.openedUtc,MYTZ,false)}</td><td>${t.closedUtc?fmtIn(t.closedUtc,MYTZ,false):'–'}</td><td>${fmtDur(holdMin(t))}</td><td>${esc(t.session)||'–'}</td><td>${esc(t.trader)}</td><td>${esc(t.instrument)}</td><td>${t.direction}</td><td>${esc(t.strategy)}</td><td>${t.entry}</td><td>${t.sl}</td><td>${t.trailed==='Yes'?t.finalSl+' ⤴':'–'}</td><td>${t.tp}</td><td>${t.exit}</td><td>${esc(exitOf(t))}</td><td>${t.plannedRR===''?'–':'1:'+t.plannedRR}</td><td class="${cls(t.r)}">${fmt(t.r)}</td><td class="${cls(t.pnl)}">${t.pnl===''?'–':fmt(t.pnl)+' '+esc(t.currency||'')}</td><td><span class="pill ${t.outcome}">${t.outcome}</span></td><td><span class="pill ${key(t.quality)}">${esc(t.quality)}</span></td><td>${miniBar(t.confidence)}</td><td class="shot-cell">${(t.shots&&t.shots.length)?`<button type="button" class="ghost small" data-view="${esc(t.shots.join(','))}">&#128247; ${t.shots.length}</button>`:''}${(String(t.trader).toLowerCase()===me&&(!t.shots||t.shots.length<MAXSHOTS))?`<button type="button" class="ghost small" data-addshot="${t.id}" title="Add screenshot">+&#128247;</button>`:''}</td><td style="white-space:normal;max-width:220px">${esc(t.notes)}</td><td>${String(t.trader).toLowerCase()===me?`<button class="ghost small" onclick="del('${t.id}')">✕</button>`:''}</td></tr>`).join('')+'</table>'
+  $('tbl').innerHTML=rows.length?`<table><tr><th>Date</th><th>Time (UTC)</th><th>Time (${esc(MYTZ)})</th><th>Closed (${esc(MYTZ)})</th><th>Held</th><th>Session</th><th>Trader</th><th>Instrument</th><th>Dir</th><th>Strategy</th><th>Lots</th><th>Risk</th><th>Risk %</th><th>Entry</th><th>Init SL</th><th>Final SL</th><th>Init TP</th><th>Exit</th><th>How it ended</th><th>Plan RR</th><th>R</th><th>PnL</th><th>Result</th><th>Quality</th><th>Conf</th><th>Shots</th><th>Notes</th><th></th></tr>`+
+    rows.map(t=>`<tr><td>${esc(t.date)}</td><td>${fmtIn(t.openedUtc,'UTC',false)}</td><td title="Trader's own time: ${esc(fmtIn(t.openedUtc,t.timezone||'UTC',false))} ${esc(t.timezone)}">${fmtIn(t.openedUtc,MYTZ,false)}</td><td>${t.closedUtc?fmtIn(t.closedUtc,MYTZ,false):'–'}</td><td>${fmtDur(holdMin(t))}</td><td>${esc(t.session)||'–'}</td><td>${esc(t.trader)}</td><td>${esc(t.instrument)}</td><td>${t.direction}</td><td>${esc(t.strategy)}</td><td>${t.lots===''||t.lots==null?'–':fmt(t.lots,2)}</td><td>${t.risk===''||t.risk==null?'–':fmt(t.risk)}</td><td class="${t.riskPct>MYRISK*1.1?'neg':''}">${t.riskPct===''||t.riskPct==null?'–':fmt(t.riskPct,2)+'%'}</td><td>${t.entry}</td><td>${t.sl}</td><td>${t.trailed==='Yes'?t.finalSl+' ⤴':'–'}</td><td>${t.tp}</td><td>${t.exit}</td><td>${esc(exitOf(t))}</td><td>${t.plannedRR===''?'–':'1:'+t.plannedRR}</td><td class="${cls(t.r)}">${fmt(t.r)}</td><td class="${cls(t.pnl)}">${t.pnl===''?'–':fmt(t.pnl)+' '+esc(t.currency||'')}</td><td><span class="pill ${t.outcome}">${t.outcome}</span></td><td><span class="pill ${key(t.quality)}">${esc(t.quality)}</span></td><td>${miniBar(t.confidence)}</td><td class="shot-cell">${(t.shots&&t.shots.length)?`<button type="button" class="ghost small" data-view="${esc(t.shots.join(','))}">&#128247; ${t.shots.length}</button>`:''}${(String(t.trader).toLowerCase()===me&&(!t.shots||t.shots.length<MAXSHOTS))?`<button type="button" class="ghost small" data-addshot="${t.id}" title="Add screenshot">+&#128247;</button>`:''}</td><td style="white-space:normal;max-width:220px">${esc(t.notes)}</td><td>${String(t.trader).toLowerCase()===me?`<button class="ghost small" onclick="del('${t.id}')">✕</button>`:''}</td></tr>`).join('')+'</table>'
     :'<span style="color:var(--mut)">No trades yet – log your first one above.</span>';
 }
 const LINECOL=['#8b6cff','#22d3ee','#f5c542','#ff5f6d','#2fd27b','#f472b6','#fb923c','#60a5fa','#a3e635','#c084fc'];

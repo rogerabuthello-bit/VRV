@@ -18,6 +18,46 @@ export async function addInstrument(bearer: string | undefined, names: unknown) 
   return list;
 }
 
+/**
+ * Store what one pip is worth on one lot. Entered once per instrument, then
+ * every trade's risk and the size calculator fall out of it.
+ */
+export async function saveInstrumentSpec(bearer: string | undefined, rawName: unknown, raw: unknown) {
+  const who = await requireProfile(bearer);
+  const name = String(rawName || '').trim().toUpperCase();
+  if (!name) throw new AppError('Instrument name is required.');
+  const o = (raw || {}) as Record<string, unknown>;
+
+  const positive = (v: unknown, label: string): number | null => {
+    if (v === '' || v === null || v === undefined) return null;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) throw new AppError(`${label} must be a number greater than 0.`);
+    return n;
+  };
+
+  const pip_size = positive(o.pipSize, 'Pip size');
+  const value_per_pip = positive(o.valuePerPip, 'Value per pip');
+  const lot_step = positive(o.lotStep, 'Lot step') ?? 0.01;
+  if ((pip_size === null) !== (value_per_pip === null)) {
+    throw new AppError('Set both pip size and value per pip, or neither.');
+  }
+
+  const { data, error } = await db()
+    .from('instruments')
+    .update({ pip_size, value_per_pip, lot_step })
+    .eq('user_id', who.id)
+    .eq('name', name)
+    .select('name');
+  if (error) {
+    if (/pip_size|value_per_pip|lot_step/.test(error.message)) {
+      throw new AppError('Run migration 0004 in Supabase to store instrument specs.');
+    }
+    throw new AppError(error.message, 500);
+  }
+  if (!data?.length) throw new AppError(`"${name}" is not in your instrument list.`);
+  return { name, pipSize: pip_size, valuePerPip: value_per_pip, lotStep: lot_step };
+}
+
 export async function removeInstrument(bearer: string | undefined, name: unknown) {
   const who = await requireProfile(bearer);
   check(await db().from('instruments').delete().eq('user_id', who.id).eq('name', String(name || '')));

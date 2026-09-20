@@ -42,6 +42,48 @@ export function detectExitReason(o: {
   return 'Manual close';
 }
 
+/**
+ * Money risked by a position, from the one number brokers publish: what a
+ * single pip is worth on a single lot.
+ *
+ *   stop in pips  = |entry - stop| / pipSize
+ *   money at risk = stop in pips x valuePerPip x lots
+ *
+ * Expressing it this way keeps one formula for FX, metals, indices and crypto
+ * - only the spec changes - and it stays correct for shorts, because the stop
+ * distance is an absolute value.
+ */
+export function riskOfPosition(o: {
+  entry: number; sl: number; lots: number; pipSize: number; valuePerPip: number;
+}): number | null {
+  const { entry, sl, lots, pipSize, valuePerPip } = o;
+  if (!(pipSize > 0) || !(valuePerPip > 0) || !(lots > 0)) return null;
+  const pips = Math.abs(entry - sl) / pipSize;
+  if (!Number.isFinite(pips) || pips <= 0) return null;
+  return round(pips * valuePerPip * lots, 2);
+}
+
+/** The inverse: the position that puts exactly `riskMoney` at risk. */
+export function lotsForRisk(o: {
+  entry: number; sl: number; riskMoney: number; pipSize: number; valuePerPip: number; lotStep?: number;
+}): number | null {
+  const { entry, sl, riskMoney, pipSize, valuePerPip } = o;
+  const step = o.lotStep && o.lotStep > 0 ? o.lotStep : 0.01;
+  if (!(pipSize > 0) || !(valuePerPip > 0) || !(riskMoney > 0)) return null;
+  const pips = Math.abs(entry - sl) / pipSize;
+  if (!Number.isFinite(pips) || pips <= 0) return null;
+  const raw = riskMoney / (pips * valuePerPip);
+  /*
+   * Round DOWN to the broker's increment so we never suggest more risk than
+   * asked for. Binary floats make an exact 50 steps land on 49.999999999999996,
+   * and flooring that would silently drop a whole step, so settle the division
+   * to 9 decimals first - far finer than any lot size, nowhere near the noise.
+   */
+  const lots = Math.floor(Number((raw / step).toFixed(9))) * step;
+  const dp = Math.max(0, Math.ceil(-Math.log10(step)));
+  return lots > 0 ? Number(lots.toFixed(dp)) : 0;
+}
+
 export const MAX_SHOTS = 4;
 export const MAX_SHOT_BYTES = 4 * 1024 * 1024;
 

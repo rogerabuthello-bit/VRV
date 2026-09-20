@@ -19,10 +19,12 @@ export const handlers: Record<string, Handler> = {
   saveCurrency: account.saveCurrency as Handler,
   saveTimezone: account.saveTimezone as Handler,
   saveUsername: account.saveUsername as Handler,
+  saveRiskPct: account.saveRiskPct as Handler,
 
   // my setup
   addInstrument: setup.addInstrument as Handler,
   removeInstrument: setup.removeInstrument as Handler,
+  saveInstrumentSpec: setup.saveInstrumentSpec as Handler,
   saveStrategy: setup.saveStrategy as Handler,
   removeStrategy: setup.removeStrategy as Handler,
 

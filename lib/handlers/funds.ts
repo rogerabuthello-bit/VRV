@@ -5,7 +5,7 @@ import { fetchAll, check } from '../query';
 import { round, validCcy, isIsoDate, todayIn, uuid } from '../util';
 
 /** Balance of ONE currency for a trader = deposits - withdrawals + trade PnL. */
-async function balance(userId: string, ccy: string): Promise<number> {
+export async function equityOf(userId: string, ccy: string): Promise<number> {
   const supabase = db();
   const [funds, trades] = await Promise.all([
     fetchAll<{ type: string; amount: string }>(() =>
@@ -35,7 +35,7 @@ export async function addFunds(bearer: string | undefined, raw: unknown) {
   const entry_date = isIsoDate(f.date) ? String(f.date) : todayIn(who.profile.timezone || 'UTC');
 
   if (type === 'Withdrawal') {
-    const bal = await balance(who.id, currency);
+    const bal = await equityOf(who.id, currency);
     if (amount > bal + 0.005) {
       throw new AppError(
         `Withdrawal (${amount}) is more than your current ${currency} equity (${round(bal, 2)}).`,

@@ -4,9 +4,10 @@ import { requireProfile } from '../auth';
 import { check } from '../query';
 import { verifyUploaded, removeObjects, ownsPath } from './shots';
 import {
-  QUALITY, SESSIONS, MAX_SHOTS, EXIT_REASONS, detectExitReason,
+  QUALITY, SESSIONS, MAX_SHOTS, EXIT_REASONS, detectExitReason, riskOfPosition,
   num, round, validTz, validCcy, offsetMin, sessionOf, uuid, isIsoDate,
 } from '../util';
+import { equityOf } from './funds';
 
 const DAY = 86400000;
 
@@ -43,7 +44,7 @@ function closedAt(t: Record<string, unknown>, openDate: string, opened: Date, of
 }
 
 /** Columns added by later migrations; a database missing one still works. */
-const OPTIONAL_COLUMNS = ['closed_utc', 'exit_reason'];
+const OPTIONAL_COLUMNS = ['closed_utc', 'exit_reason', 'lots', 'risk_pct'];
 
 /**
  * Saves the trade, and if the database has not had a later migration applied
@@ -76,7 +77,8 @@ export async function addTrade(bearer: string | undefined, raw: unknown) {
   if (!strategy) throw new AppError('Pick a strategy.');
 
   const [{ data: haveInstr }, { data: haveStrat }] = await Promise.all([
-    supabase.from('instruments').select('id').eq('user_id', who.id).eq('name', instrument).maybeSingle(),
+    supabase.from('instruments').select('id, pip_size, value_per_pip')
+      .eq('user_id', who.id).eq('name', instrument).maybeSingle(),
     supabase.from('strategies').select('name').eq('user_id', who.id).eq('name', strategy).maybeSingle(),
   ]);
   if (!haveInstr) throw new AppError(`Add "${instrument}" in My Setup first.`);
@@ -87,7 +89,6 @@ export async function addTrade(bearer: string | undefined, raw: unknown) {
   const exit = num(t.exit);
   const tp = num(t.tp);
   let finalSl = num(t.finalSl);
-  const risk = num(t.risk) || 0;
   const direction = t.direction === 'Short' ? 'Short' : 'Long';
 
   if (entry === null || sl === null || exit === null) {
@@ -97,6 +98,26 @@ export async function addTrade(bearer: string | undefined, raw: unknown) {
   if (direction === 'Short' && sl <= entry) throw new AppError('Short: Initial SL must be above Entry.');
   if (finalSl === null) finalSl = sl;
   const slTrailed = finalSl !== sl;
+
+  /*
+   * Money at risk comes from the position itself when the instrument has a
+   * contract spec, which makes PnL exact instead of an estimate. Traders
+   * without a spec keep typing the amount by hand, as before.
+   */
+  const lots = num(t.lots);
+  if (lots !== null && lots <= 0) throw new AppError('Lot size must be greater than 0.');
+  const spec = haveInstr as { pip_size: number | null; value_per_pip: number | null };
+  const sized = lots === null ? null : riskOfPosition({
+    entry, sl, lots,
+    pipSize: spec?.pip_size ?? 0,
+    valuePerPip: spec?.value_per_pip ?? 0,
+  });
+  if (lots !== null && sized === null && num(t.risk) === null) {
+    throw new AppError(
+      `Set the pip size and value per pip for ${instrument} in My Setup, or type the risk amount.`,
+    );
+  }
+  const risk = sized ?? num(t.risk) ?? 0;
 
   // R is always measured against the INITIAL stop, even if the stop was trailed.
   const riskDist = entry - sl;
@@ -150,6 +171,14 @@ export async function addTrade(bearer: string | undefined, raw: unknown) {
     ? chosen
     : detectExitReason({ entry, sl, finalSl, tp, exit });
 
+  // Share of equity actually put at risk - the number that exposes sizing up
+  // after a loss, which the R figure alone hides.
+  let riskPct: number | null = null;
+  if (risk > 0) {
+    const equity = await equityOf(who.id, currency);
+    if (equity > 0) riskPct = round((risk / equity) * 100, 2);
+  }
+
   const shots = Array.isArray(t.shots) ? t.shots.map(String).filter(Boolean) : [];
   const screenshots = await verifyUploaded(who.id, shots);
 
@@ -166,6 +195,7 @@ export async function addTrade(bearer: string | undefined, raw: unknown) {
       initial_tp: tp,
       exit_price: exit,
       risk: risk || null,
+      lots,
       planned_rr: plannedRR,
       result_r: resultR,
       pnl,
@@ -178,6 +208,7 @@ export async function addTrade(bearer: string | undefined, raw: unknown) {
       opened_utc: opened.toISOString(),
       closed_utc: closed ? closed.toISOString() : null,
       exit_reason: exitReason,
+      risk_pct: riskPct,
       session,
       currency,
   });
@@ -195,6 +226,9 @@ export async function addTrade(bearer: string | undefined, raw: unknown) {
     trailed: slTrailed ? 'Yes' : 'No',
     session,
     exitReason,
+    risk: risk || '',
+    lots: lots ?? '',
+    riskPct: riskPct ?? '',
     heldMinutes: closed ? Math.round((closed.getTime() - opened.getTime()) / 60000) : '',
   };
 }

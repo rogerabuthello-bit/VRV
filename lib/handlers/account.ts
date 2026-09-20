@@ -14,6 +14,7 @@ interface TradeRow {
   result_r: number; pnl: number | null; outcome: string; quality: string; notes: string;
   confidence: number; screenshots: string[]; timezone: string; opened_utc: string;
   session: string; currency: string; closed_utc: string | null; exit_reason: string | null;
+  lots: number | null; risk_pct: number | null;
   trader: { username: string } | null;
 }
 
@@ -40,8 +41,12 @@ export async function getBootstrap(bearer: string | undefined) {
   const [tradeRows, instrRows, stratRows, memberRows, fundRows] = await Promise.all([
     fetchAll<TradeRow>(() =>
       supabase.from('trades').select('*, trader:users!inner(username)').order('trade_date', { ascending: true })),
-    fetchAll<{ name: string; trader: { username: string } | null }>(() =>
-      supabase.from('instruments').select('name, trader:users!inner(username)')),
+    fetchAll<{
+      name: string; pip_size: number | null; value_per_pip: number | null;
+      lot_step: number | null; trader: { username: string } | null;
+    }>(() => supabase
+      .from('instruments')
+      .select('name, pip_size, value_per_pip, lot_step, trader:users!inner(username)')),
     fetchAll<{ name: string; description: string; trader: { username: string } | null }>(() =>
       supabase.from('strategies').select('name, description, trader:users!inner(username)')),
     fetchAll<{ username: string }>(() =>
@@ -56,6 +61,7 @@ export async function getBootstrap(bearer: string | undefined) {
     email: me.email,
     tz: me.timezone || '',
     ccy: me.currency || '',
+    riskPct: (me as unknown as { default_risk_pct?: number }).default_risk_pct ?? 1,
     members: memberRows.map((r) => r.username).filter(Boolean).sort(),
     funds: fundRows.map((f) => ({
       id: f.id,
@@ -65,7 +71,13 @@ export async function getBootstrap(bearer: string | undefined) {
       currency: f.currency,
       note: f.note,
     })),
-    instruments: instrRows.map((r) => ({ trader: r.trader?.username || '', name: r.name })),
+    instruments: instrRows.map((r) => ({
+      trader: r.trader?.username || '',
+      name: r.name,
+      pipSize: r.pip_size,
+      valuePerPip: r.value_per_pip,
+      lotStep: r.lot_step || 0.01,
+    })),
     strategies: stratRows.map((r) => ({
       trader: r.trader?.username || '', name: r.name, description: r.description || '',
     })),
@@ -96,6 +108,8 @@ export async function getBootstrap(bearer: string | undefined) {
       openedUtc: isoOrEmpty(t.opened_utc),
       closedUtc: isoOrEmpty(t.closed_utc),
       exitReason: t.exit_reason || '',
+      lots: orBlank(t.lots),
+      riskPct: orBlank(t.risk_pct),
       session: t.session || '',
       currency: t.currency || '',
     })),
@@ -218,6 +232,23 @@ export async function saveTimezone(bearer: string | undefined, raw: unknown) {
   if (!tz) throw new AppError('Unknown timezone.');
   check(await db().from('users').update({ timezone: tz }).eq('id', who.id));
   return tz;
+}
+
+/** The risk-per-trade plan every trade is then measured against. */
+export async function saveRiskPct(bearer: string | undefined, raw: unknown) {
+  const who = await requireProfile(bearer);
+  const pct = Number(raw);
+  if (!Number.isFinite(pct) || pct <= 0 || pct > 100) {
+    throw new AppError('Risk per trade must be between 0 and 100 percent.');
+  }
+  const { error } = await db().from('users').update({ default_risk_pct: pct }).eq('id', who.id);
+  if (error) {
+    if (/default_risk_pct/.test(error.message)) {
+      throw new AppError('Run migration 0004 in Supabase to save a risk plan.');
+    }
+    throw new AppError(error.message, 500);
+  }
+  return pct;
 }
 
 /** Lets a member rename their own handle. */

@@ -413,6 +413,21 @@
   body.onboarding.locked #onboard{display:grid;min-height:100vh;place-items:center;padding:20px}
   #onboard{display:none}
 
+  /* ---------------- position size calculator ---------------- */
+  .calc{
+    margin-top:16px;
+    border-color:color-mix(in srgb, var(--accent-2) 42%, var(--line));
+    background:linear-gradient(180deg, color-mix(in srgb, var(--accent-2) 8%, transparent) 0%, transparent 110px), var(--card);
+  }
+  .calc > .card-head h2{color:var(--accent-2)}
+  .calc-risk{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mut)}
+  .calc-risk label{margin:0}
+  .calc-risk input{width:82px;text-align:right;font-weight:700}
+  .calc .stat .v{font-size:19px}
+  .stat.lead{border-color:color-mix(in srgb,var(--accent-2) 55%,var(--line));background:color-mix(in srgb,var(--accent-2) 10%,var(--inset))}
+  .stat.lead .v{color:var(--accent-2)}
+  .spec-tbl input{padding:6px 8px;font-size:13px;width:110px}
+
   /* ---------------- admin ---------------- */
   .tab.admin-tab{display:none}
   body.is-admin .tab.admin-tab{display:inline-block}
@@ -529,7 +544,8 @@
       <div class="field"><label for="tp">Initial TP (planned)</label><input type="number" step="any" id="tp" inputmode="decimal"></div>
       <div class="field"><label for="exit">Exit price</label><input type="number" step="any" id="exit" inputmode="decimal"><div class="hint">Where you actually closed &mdash; target, stop, trail or manual</div></div>
       <div class="field"><label for="xreason">How it ended</label><select id="xreason"></select><div class="hint" id="xreasonHint">Worked out from your prices</div></div>
-      <div class="field"><label for="risk">Risk amount (optional)</label><input type="number" step="any" id="risk" inputmode="decimal"></div>
+      <div class="field"><label for="lots">Lot size</label><input type="number" step="any" min="0" id="lots" inputmode="decimal"><div class="hint" id="lotsHint">Set the instrument's pip value in My Setup</div></div>
+      <div class="field"><label for="risk">Risk amount</label><input type="number" step="any" id="risk" inputmode="decimal"><div class="hint">Filled in from your lot size when it can be</div></div>
       <div class="field"><label for="ccy">Currency</label><select id="ccy"></select><div class="hint">Your base currency by default</div></div>
       <div class="field field-wide">
         <label id="confLabel" for="cbar">Confidence: &ldquo;I was confident in this trade&rdquo;</label>
@@ -546,7 +562,7 @@
       <div class="field"><label for="quality">Trade quality</label><select id="quality"></select><div class="hint">Options follow the result</div></div>
     </div>
     <div class="field" style="margin-top:14px">
-      <label>Screenshots (optional, up to 4) &middot; saved to Google Drive</label>
+      <label>Screenshots (optional, up to 4)</label>
       <div class="shot-drop">
         <button type="button" class="ghost small" id="shotBtn">&#128247; Add screenshots</button>
         <input type="file" id="shotFile" accept="image/*" multiple hidden>
@@ -555,6 +571,18 @@
       <div class="thumbs" id="thumbs"></div>
     </div>
     <div class="field" style="margin-top:14px"><label for="notes">Notes</label><textarea id="notes" rows="2"></textarea></div>
+    <section class="card calc" id="calcCard">
+      <div class="card-head">
+        <h2>Position size</h2>
+        <div class="calc-risk">
+          <label for="calcPct">Risk</label>
+          <input type="number" step="0.05" min="0.01" max="100" id="calcPct" inputmode="decimal">
+          <span>% of equity</span>
+        </div>
+      </div>
+      <div class="grid stats" id="calcOut"></div>
+      <div class="hint" id="calcNote"></div>
+    </section>
     <div class="preview" id="preview">Fill entry, initial SL and exit to preview.</div>
     <div class="entry-actions"><button id="add">Add trade</button><span id="msg"></span></div>
   </section>
@@ -644,6 +672,8 @@
         <div class="hint" style="margin:-6px 0 10px">The markets you trade. You can only log trades on instruments listed here. Separate several with commas.</div>
         <div class="add-inline" style="margin-top:0"><input id="setInstr" placeholder="e.g. EURUSD, XAUUSD, NAS100" aria-label="Instrument names"><button id="setInstrAdd" type="button">Add</button></div>
         <div class="chips" id="myInstrList"></div>
+        <div class="scroll" id="instrSpecs" style="margin-top:14px"></div>
+        <div class="hint" style="margin-top:8px">One pip on one lot. A standard FX lot is usually pip size <b>0.0001</b> and <b>10</b> per pip (JPY pairs use <b>0.01</b>). Check your broker &mdash; it decides these, not us.</div>
       </section>
       <section class="card">
         <h2>Add / edit a strategy</h2>
@@ -671,6 +701,9 @@
         <div class="field"><label for="setCcy">Base currency</label>
           <div class="add-inline" style="margin-top:0"><select id="setCcy"></select><button id="setCcySave" type="button">Save</button></div>
           <div class="hint" id="setCcyMsg">Used to pre-fill the currency on new trades.</div></div>
+        <div class="field"><label for="setRisk">Risk per trade (% of equity)</label>
+          <div class="add-inline" style="margin-top:0"><input type="number" step="0.05" min="0.01" max="100" id="setRisk" inputmode="decimal"><button id="setRiskSave" type="button">Save</button></div>
+          <div class="hint" id="setRiskMsg">Your plan. The calculator sizes to it and the dashboard flags trades that broke it.</div></div>
         <div class="field"><label for="setTz">Time zone (UTC/GMT offset)</label>
           <div class="add-inline" style="margin-top:0"><select id="setTz"></select><button id="setTzSave" type="button">Save</button></div>
           <div class="hint" id="setTzMsg">Every trade is also stored in UTC so trades from different countries line up. Daylight saving? Change the offset when your clocks change.</div></div>

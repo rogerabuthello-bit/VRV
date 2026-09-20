@@ -78,6 +78,27 @@ In the [Google Cloud console](https://console.cloud.google.com/apis/credentials)
 3. Deploy, then go back to Supabase and make sure the deployed URL is the
    *Site URL* / a *Redirect URL*.
 
+### Position sizing
+
+Each instrument carries what **one pip is worth on one lot** (My Setup →
+Instruments). That single number, which your broker publishes, drives
+everything else:
+
+```
+stop in pips  = |entry - stop| / pip size
+money at risk = stop in pips x value per pip x lots
+lots          = (equity x risk %) / (stop in pips x value per pip)
+```
+
+One formula covers FX, metals, indices and crypto — only the spec changes —
+and it holds for shorts, because the stop distance is an absolute value.
+Suggested sizes round **down** to your broker's lot step, so the calculator
+never proposes more risk than you asked for.
+
+With a spec set, the risk amount on a trade is derived from the lot size
+rather than typed, which makes PnL exact instead of an estimate. Without one,
+you type the risk amount as before.
+
 ### Stuck? Open `/api/health`
 
 Visit `https://your-app.vercel.app/api/health`. It checks every environment
