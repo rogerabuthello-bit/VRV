@@ -21,6 +21,8 @@ export const handlers: Record<string, Handler> = {
   saveUsername: account.saveUsername as Handler,
   saveRiskPct: account.saveRiskPct as Handler,
   saveBroker: account.saveBroker as Handler,
+  addBroker: account.addBroker as Handler,
+  removeBroker: account.removeBroker as Handler,
 
   // my setup
   addInstrument: setup.addInstrument as Handler,

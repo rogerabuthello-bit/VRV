@@ -436,6 +436,38 @@
   .dirbtn.short:hover,.dirbtn.short.on{background:color-mix(in srgb,var(--r) 20%,var(--inset));border-color:var(--r);color:var(--r)}
   .dirbtn.on{box-shadow:inset 0 0 0 1px currentColor}
 
+  /* ---------------- broker bar ---------------- */
+  .brokerbar{
+    margin-bottom:16px;padding:12px 13px;
+    background:var(--card-2);border:1px solid var(--line);border-radius:var(--radius-sm);
+  }
+  .bb-head{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;justify-content:space-between}
+  .bb-picks{margin-top:10px}
+  /* The pill and its remove control share one frame, so they read as one chip. */
+  .bb-picks .bb-pick{
+    display:inline-flex;align-items:stretch;
+    border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;
+  }
+  .bb-picks .bb-pick:has([data-bpick].on){border-color:var(--accent)}
+  .bb-picks .bb-pick > [data-bpick]{border:0;border-radius:0}
+  .bb-picks .bb-x{
+    border:0;border-left:1px solid var(--line);border-radius:0;
+    background:var(--inset);color:var(--mut-2);
+    padding:0 8px;font-size:11px;line-height:1;
+  }
+  .bb-picks .bb-pick:has([data-bpick].on) .bb-x{
+    border-left-color:color-mix(in srgb,var(--accent) 45%,transparent);
+  }
+  .bb-picks .bb-x:hover{background:color-mix(in srgb,var(--r) 20%,var(--inset));color:var(--r)}
+  .bb-picks .bb-pick .hint{font-family:var(--font-mono);opacity:.75}
+  /* On the selected pill the count sits on emerald, so it must take the ink colour. */
+  .bb-picks [data-bpick].on .hint{color:inherit;opacity:.6}
+  .bb-add{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+  .bb-add input{flex:1;min-width:0}
+  .bb-add button{flex:none}
+  .brokerbar .hint:last-child:empty{display:none}
+  .brokerbar .hint:last-child{margin-top:9px}
+
   /* ---------------- dense cockpit layout ---------------- */
   .kpis{grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:12px}
   .kpis .kpi{
@@ -1077,15 +1109,19 @@
       <section class="card">
         <h2>My instruments</h2>
         <div class="hint" style="margin:-6px 0 10px">The markets you trade. You can only log trades on instruments listed here. Separate several with commas.</div>
-        <div class="field" style="margin-bottom:12px"><label for="setBroker">Broker</label>
-          <div class="add-inline" style="margin-top:0">
-            <select id="setBroker"></select>
-            <input id="newBroker" placeholder="Add a broker…" style="max-width:190px">
-            <button id="addBroker" type="button">Add</button>
+        <div class="brokerbar">
+          <div class="bb-head">
+            <label id="brokerLabel" style="margin:0">Broker</label>
+            <span class="hint" style="margin:0">Pip values below belong to the selected broker</span>
           </div>
-          <div class="hint" id="brokerMsg">Instruments and pip values below belong to this broker. Switch brokers and the old settings stay put.</div>
+          <div class="scope bb-picks" id="brokerPicks" role="group" aria-labelledby="brokerLabel"></div>
+          <div class="bb-add">
+            <input id="newBroker" maxlength="60" placeholder="e.g. IC Markets" aria-label="New broker name">
+            <button id="addBroker" type="button" class="ghost">&#43;&nbsp; Add broker</button>
+          </div>
+          <div class="hint" id="brokerMsg"></div>
         </div>
-        <div class="add-inline" style="margin-top:0"><input id="setInstr" placeholder="e.g. EURUSD, XAUUSD, NAS100" aria-label="Instrument names"><button id="setInstrAdd" type="button">Add</button></div>
+        <div class="add-inline" style="margin-top:0"><input id="setInstr" placeholder="e.g. EURUSD, XAUUSD, NAS100" aria-label="Instrument names"><button id="setInstrAdd" type="button">Add instrument</button></div>
         <div class="chips" id="myInstrList"></div>
         <div class="scroll" id="instrSpecs" style="margin-top:14px"></div>
         <div class="hint" style="margin-top:8px">One pip on one lot. A standard FX lot is usually pip size <b>0.0001</b> and <b>10</b> per pip (JPY pairs use <b>0.01</b>). Check your broker &mdash; it decides these, not us.</div>

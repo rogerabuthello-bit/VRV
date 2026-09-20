@@ -138,6 +138,12 @@ one, leaves the settings you already proved out on the first untouched. Each
 trade records the broker it was taken on, so history still reads correctly
 after a move.
 
+The broker list is stored on the trader rather than inferred from whichever
+instruments happen to exist, so a broker you have just added survives until
+you give it instruments. In My Setup the list is a switcher showing each
+broker's instrument count; removing one is refused while instruments still
+hang off it, since those pip values are the whole point of the broker.
+
 ### Risk intelligence
 
 Lot size and risk amount are two views of one decision, so whichever you type

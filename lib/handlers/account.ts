@@ -68,6 +68,7 @@ export async function getBootstrap(bearer: string | undefined) {
     ccy: me.currency || '',
     riskPct: (me as unknown as { default_risk_pct?: number }).default_risk_pct ?? 1,
     broker: (me as unknown as { active_broker?: string }).active_broker || '',
+    brokers: (me as unknown as { brokers?: string[] }).brokers || [],
     members: memberRows.map((r) => r.username).filter(Boolean).sort(),
     funds: fundRows.map((f) => ({
       id: f.id,
@@ -264,18 +265,74 @@ export async function saveRiskPct(bearer: string | undefined, raw: unknown) {
   return pct;
 }
 
+const cleanBrokerName = (v: unknown) => String(v || '').trim().slice(0, 60);
+
+async function brokerList(userId: string): Promise<string[]> {
+  const { data } = await db().from('users').select('brokers').eq('id', userId).maybeSingle();
+  return ((data as { brokers?: string[] } | null)?.brokers) || [];
+}
+
+function brokerColumnError(message: string): AppError | null {
+  return /brokers|active_broker/.test(message)
+    ? new AppError('Run migrations 0006 and 0007 in Supabase to use brokers.')
+    : null;
+}
+
 /** Which broker's settings the journal is working with right now. */
 export async function saveBroker(bearer: string | undefined, raw: unknown) {
   const who = await requireProfile(bearer);
-  const broker = String(raw || '').trim().slice(0, 60);
+  const broker = cleanBrokerName(raw);
   const { error } = await db().from('users').update({ active_broker: broker }).eq('id', who.id);
-  if (error) {
-    if (/active_broker/.test(error.message)) {
-      throw new AppError('Run migration 0006 in Supabase to use brokers.');
-    }
-    throw new AppError(error.message, 500);
-  }
+  if (error) throw brokerColumnError(error.message) || new AppError(error.message, 500);
   return broker;
+}
+
+/** Add a broker to my list and switch to it. */
+export async function addBroker(bearer: string | undefined, raw: unknown) {
+  const who = await requireProfile(bearer);
+  const name = cleanBrokerName(raw);
+  if (!name) throw new AppError('Give the broker a name.');
+
+  const list = await brokerList(who.id);
+  if (list.some((b) => b.toLowerCase() === name.toLowerCase())) {
+    throw new AppError(`"${name}" is already in your list.`);
+  }
+  if (list.length >= 20) throw new AppError('That is as many brokers as the journal tracks.');
+
+  const brokers = [...list, name].sort((a, b) => a.localeCompare(b));
+  const { error } = await db().from('users')
+    .update({ brokers, active_broker: name }).eq('id', who.id);
+  if (error) throw brokerColumnError(error.message) || new AppError(error.message, 500);
+  return { brokers, active: name };
+}
+
+/**
+ * Remove a broker. Refuses while instruments still hang off it, because the
+ * pip values set up there are exactly what the broker exists to hold.
+ */
+export async function removeBroker(bearer: string | undefined, raw: unknown) {
+  const who = await requireProfile(bearer);
+  const name = cleanBrokerName(raw);
+  const supabase = db();
+
+  const { count, error: cErr } = await supabase
+    .from('instruments').select('id', { count: 'exact', head: true })
+    .eq('user_id', who.id).eq('broker', name);
+  if (cErr) throw new AppError(cErr.message, 500);
+  if ((count || 0) > 0) {
+    throw new AppError(
+      `"${name}" still has ${count} instrument${count === 1 ? '' : 's'}. Remove those first.`,
+    );
+  }
+
+  const brokers = (await brokerList(who.id)).filter((b) => b !== name);
+  const active = (who.profile as unknown as { active_broker?: string }).active_broker;
+  const patch: Record<string, unknown> = { brokers };
+  if (active === name) patch.active_broker = brokers[0] || '';
+
+  const { error } = await supabase.from('users').update(patch).eq('id', who.id);
+  if (error) throw brokerColumnError(error.message) || new AppError(error.message, 500);
+  return { brokers, active: (patch.active_broker as string) ?? active ?? '' };
 }
 
 /** Lets a member rename their own handle. */

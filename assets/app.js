@@ -10,8 +10,14 @@ let MYBROKER = '';                                  // whose pip settings we are
 let SIZE_SRC = 'lots';                              // which of lots / risk the trader last typed
 const brokerOf = () => $('brokerSel').value || '';
 const specOf = name => INSTR.find(i => i.trader===ME && i.name===name && (i.broker||'')===brokerOf()) || null;
-const myBrokers = () => [...new Set(INSTR.filter(i=>i.trader===ME).map(i=>i.broker||''))]
-  .concat(MYBROKER).filter((v,i,a)=>a.indexOf(v)===i).sort();
+let BROKERS = [];
+/** Stored list, plus any broker still attached to an instrument, plus the active one. */
+const myBrokers = () => [...new Set([
+  ...BROKERS,
+  ...INSTR.filter(i=>i.trader===ME).map(i=>i.broker||''),
+  MYBROKER,
+])].sort((a,b)=>a===''?-1:b===''?1:a.localeCompare(b));
+const instrCount = b => INSTR.filter(i=>i.trader===ME && (i.broker||'')===b).length;
 const hasSpec = sp => !!(sp && sp.pipSize>0 && sp.valuePerPip>0);
 // Must stay in step with riskOfPosition()/lotsForRisk() in lib/util.ts.
 function riskOfPosition(entry, sl, lots, sp){
@@ -316,7 +322,7 @@ function load(){
     fillForm(); fillFilters();
     if(!SCOPE_TOUCHED){ $('fTrader').value = ALL.some(t=>t.trader===ME) ? ME : '__ALL__'; }
     MYRISK=+d.riskPct||1; if(!$('calcPct').value) $('calcPct').value=MYRISK;
-    MYBROKER=d.broker||''; fillBrokers();
+    MYBROKER=d.broker||''; BROKERS=d.brokers||[]; fillBrokers();
     fillTz(); fillCcy(); fillExitReason(); fillEmotions(); renderMistakes(); renderRules();
     render(); renderSetup(); recalcSize(); renderCalc();
     if(!EDITING) setDir($('dir').value || 'Long');
@@ -664,28 +670,55 @@ function preview(){
   $('preview').textContent=out.join('  •  ');
   updateQuality(); updateExitHint();
 }
+const brokerLabel = b => b || 'No broker set';
+
 function fillBrokers(){
-  const list = myBrokers(), label = b => b || '(no broker set)';
-  const opts = sel => list.map(b=>`<option value="${esc(b)}"${b===sel?' selected':''}>${esc(label(b))}</option>`).join('');
+  const list = myBrokers();
   const cur = $('brokerSel').value || MYBROKER;
-  $('brokerSel').innerHTML = opts(list.includes(cur) ? cur : MYBROKER);
-  $('setBroker').innerHTML = opts(MYBROKER);
+  $('brokerSel').innerHTML = list
+    .map(b=>`<option value="${esc(b)}"${b===(list.includes(cur)?cur:MYBROKER)?' selected':''}>${esc(brokerLabel(b))}</option>`)
+    .join('');
+  renderBrokerPicks();
 }
-$('brokerSel').addEventListener('change', () => { fillForm(); recalcSize(); renderCalc(); renderInstrSpecs(); });
-$('setBroker').addEventListener('change', () => {
-  api('saveBroker', $('setBroker').value).then(b=>{
-    MYBROKER=b; $('brokerSel').value=b; $('brokerMsg').textContent='Now using: ' + (b || '(no broker set)');
-    fillBrokers(); fillForm(); renderInstrSpecs(); recalcSize(); renderCalc();
-  }).catch(fail);
+
+/** Switching brokers is a segmented control; adding one is its own control. */
+function renderBrokerPicks(){
+  const list = myBrokers();
+  $('brokerPicks').innerHTML = list.map(b=>{
+    const on = b===MYBROKER, n = instrCount(b);
+    return `<span class="bb-pick"><button type="button" class="${on?'on':''}" data-bpick="${esc(b)}" aria-pressed="${on}">`
+      + `${esc(brokerLabel(b))}<span class="hint" style="margin:0 0 0 7px">${n}</span></button>`
+      + (list.length>1 && b!=='' ? `<button type="button" class="bb-x" data-bdel="${esc(b)}" title="Remove ${esc(brokerLabel(b))}" aria-label="Remove ${esc(brokerLabel(b))}">&#10005;</button>` : '')
+      + '</span>';
+  }).join('');
+
+  $('brokerPicks').querySelectorAll('[data-bpick]').forEach(b=>b.onclick=()=>{
+    if(b.dataset.bpick===MYBROKER) return;
+    $('brokerMsg').textContent='Switching…';
+    api('saveBroker', b.dataset.bpick).then(()=>{ $('brokerMsg').textContent=''; return load(); }).catch(e=>{
+      $('brokerMsg').textContent = msgOf(e);
+    });
+  });
+  $('brokerPicks').querySelectorAll('[data-bdel]').forEach(b=>b.onclick=()=>{
+    const name=b.dataset.bdel;
+    if(!confirm('Remove the broker "'+name+'"?')) return;
+    $('brokerMsg').textContent='';
+    api('removeBroker', name).then(()=>load()).catch(e=>{ $('brokerMsg').textContent = msgOf(e); });
+  });
+}
+
+$('newBroker').addEventListener('keydown', e => {
+  if(e.key==='Enter'){ e.preventDefault(); $('addBroker').click(); }
 });
+$('brokerSel').addEventListener('change', () => { fillForm(); recalcSize(); renderCalc(); });
 $('addBroker').onclick = () => {
   const name = $('newBroker').value.trim();
-  if(!name) return;
-  api('saveBroker', name).then(b=>{
-    MYBROKER=b; $('newBroker').value='';
-    $('brokerMsg').textContent='Added "' + b + '". Add its instruments and pip values below.';
-    fillBrokers(); $('brokerSel').value=b; fillForm(); renderInstrSpecs(); recalcSize(); renderCalc();
-  }).catch(fail);
+  if(!name){ $('brokerMsg').textContent='Type a broker name first.'; $('newBroker').focus(); return; }
+  $('addBroker').disabled=true; $('brokerMsg').textContent='';
+  api('addBroker', name)
+    .then(()=>load().then(()=>{ $('newBroker').value=''; $('brokerMsg').textContent='Added "'+name+'". Now add its instruments and pip values below.'; }))
+    .catch(e=>{ $('brokerMsg').textContent = msgOf(e); })
+    .finally(()=>{ $('addBroker').disabled=false; });
 };
 
 function fillExitReason(){
