@@ -2,6 +2,7 @@ import { db } from '../supabase';
 import { AppError } from '../errors';
 import { requireProfile } from '../auth';
 import { check } from '../query';
+import { INSTRUMENT_PRESETS } from '../util';
 
 /** Broker names are free text, trimmed and capped; '' means "no broker set". */
 export function cleanBroker(v: unknown): string {
@@ -52,25 +53,30 @@ export async function saveInstrumentSpec(bearer: string | undefined, rawName: un
   const pip_size = positive(o.pipSize, 'Pip size');
   const value_per_pip = positive(o.valuePerPip, 'Value per pip');
   const lot_step = positive(o.lotStep, 'Lot step') ?? 0.01;
+  const rawCommission = Number(o.commissionPerLot);
+  const commission_per_lot = Number.isFinite(rawCommission) && rawCommission >= 0 ? rawCommission : 0;
   if ((pip_size === null) !== (value_per_pip === null)) {
     throw new AppError('Set both pip size and value per pip, or neither.');
   }
 
   const { data, error } = await db()
     .from('instruments')
-    .update({ pip_size, value_per_pip, lot_step })
+    .update({ pip_size, value_per_pip, lot_step, commission_per_lot })
     .eq('user_id', who.id)
     .eq('name', name)
     .eq('broker', broker)
     .select('name');
   if (error) {
+    if (/commission_per_lot/.test(error.message)) {
+      throw new AppError('Run migration 0010 in Supabase to store commission.');
+    }
     if (/pip_size|value_per_pip|lot_step/.test(error.message)) {
       throw new AppError('Run migration 0004 in Supabase to store instrument specs.');
     }
     throw new AppError(error.message, 500);
   }
   if (!data?.length) throw new AppError(`"${name}" is not in your instrument list.`);
-  return { name, broker, pipSize: pip_size, valuePerPip: value_per_pip, lotStep: lot_step };
+  return { name, broker, pipSize: pip_size, valuePerPip: value_per_pip, lotStep: lot_step, commissionPerLot: commission_per_lot };
 }
 
 export async function removeInstrument(bearer: string | undefined, name: unknown, rawBroker?: unknown) {
@@ -81,6 +87,46 @@ export async function removeInstrument(bearer: string | undefined, name: unknown
   check(await db().from('instruments').delete()
     .eq('user_id', who.id).eq('name', String(name || '')).eq('broker', broker));
   return true;
+}
+
+/**
+ * Adds a named group of instruments with conventional specs already filled in.
+ * Existing rows are left alone, so this never overwrites a spec the trader has
+ * already tuned to their broker.
+ */
+export async function addInstrumentPreset(bearer: string | undefined, rawGroup: unknown, rawBroker?: unknown) {
+  const who = await requireProfile(bearer);
+  const group = String(rawGroup || '');
+  const rows = INSTRUMENT_PRESETS[group];
+  if (!rows) throw new AppError('Unknown instrument group.');
+
+  const broker = rawBroker === undefined
+    ? (who.profile as unknown as { active_broker?: string }).active_broker || ''
+    : cleanBroker(rawBroker);
+
+  const supabase = db();
+  const { data: existing } = await supabase
+    .from('instruments').select('name').eq('user_id', who.id).eq('broker', broker);
+  const have = new Set(((existing as { name: string }[] | null) || []).map((r) => r.name));
+  const fresh = rows.filter((r) => !have.has(r.name));
+  if (!fresh.length) return { added: [], skipped: rows.map((r) => r.name) };
+
+  const payload = fresh.map((r) => ({
+    user_id: who.id,
+    broker,
+    name: r.name,
+    pip_size: r.pipSize,
+    value_per_pip: r.valuePerPip,
+    lot_step: r.lotStep,
+  }));
+  let err = (await supabase.from('instruments').insert(payload)).error;
+  if (err && /pip_size|value_per_pip|lot_step/.test(err.message)) {
+    err = (await supabase.from('instruments')
+      .insert(payload.map(({ user_id, broker: b, name }) => ({ user_id, broker: b, name })))).error;
+  }
+  if (err) throw new AppError(err.message, 500);
+
+  return { added: fresh.map((r) => r.name), skipped: rows.filter((r) => have.has(r.name)).map((r) => r.name) };
 }
 
 /** Create or update (by name) one of MY strategies. */

@@ -4,7 +4,7 @@ import { AppError } from '../errors';
 import { identify, requireProfile, isBootstrapAttempt, type Identity } from '../auth';
 import { fetchAll, check } from '../query';
 import {
-  validUsername, validTz, validCcy, dateOnly, isoOrEmpty, orBlank,
+  validUsername, validTz, validCcy, dateOnly, isoOrEmpty, orBlank, POI_PRESETS,
 } from '../util';
 
 interface TradeRow {
@@ -14,7 +14,7 @@ interface TradeRow {
   result_r: number; pnl: number | null; outcome: string; quality: string; notes: string;
   confidence: number; screenshots: string[]; timezone: string; opened_utc: string;
   session: string; currency: string; closed_utc: string | null; exit_reason: string | null;
-  lots: number | null; risk_pct: number | null; broker: string | null;
+  lots: number | null; risk_pct: number | null; broker: string | null; commission: number | null;
   mistakes: string[] | null; emotion: string | null;
   rules_followed: string[] | null; rules_total: number | null; poi: string | null;
   trader: { username: string } | null;
@@ -45,10 +45,10 @@ export async function getBootstrap(bearer: string | undefined) {
       supabase.from('trades').select('*, trader:users!inner(username)').order('trade_date', { ascending: true })),
     fetchAll<{
       name: string; broker: string | null; pip_size: number | null; value_per_pip: number | null;
-      lot_step: number | null; trader: { username: string } | null;
+      lot_step: number | null; commission_per_lot: number | null; trader: { username: string } | null;
     }>(() => supabase
       .from('instruments')
-      .select('name, broker, pip_size, value_per_pip, lot_step, trader:users!inner(username)')),
+      .select('name, broker, pip_size, value_per_pip, lot_step, commission_per_lot, trader:users!inner(username)')),
     fetchAll<{
       name: string; description: string; rules: string[] | null; pois: string[] | null;
       trader: { username: string } | null;
@@ -86,6 +86,7 @@ export async function getBootstrap(bearer: string | undefined) {
       pipSize: r.pip_size,
       valuePerPip: r.value_per_pip,
       lotStep: r.lot_step || 0.01,
+      commissionPerLot: r.commission_per_lot || 0,
     })),
     strategies: stratRows.map((r) => ({
       trader: r.trader?.username || '', name: r.name, description: r.description || '',
@@ -120,6 +121,7 @@ export async function getBootstrap(bearer: string | undefined) {
       closedUtc: isoOrEmpty(t.closed_utc),
       exitReason: t.exit_reason || '',
       lots: orBlank(t.lots),
+      commission: t.commission || 0,
       riskPct: orBlank(t.risk_pct),
       broker: t.broker || '',
       mistakes: t.mistakes || [],
@@ -355,6 +357,20 @@ export async function addPoi(bearer: string | undefined, raw: unknown) {
   if (list.length >= 40) throw new AppError('That is as many points of interest as the journal tracks.');
 
   const pois = [...list, name].sort((a, b) => a.localeCompare(b));
+  const { error } = await db().from('users').update({ pois }).eq('id', who.id);
+  if (error) throw poiColumnError(error.message) || new AppError(error.message, 500);
+  return pois;
+}
+
+/** Fills the library with a starting vocabulary, skipping anything already there. */
+export async function addPoiPreset(bearer: string | undefined) {
+  const who = await requireProfile(bearer);
+  const list = await poiList(who.id);
+  const lower = new Set(list.map((v) => v.toLowerCase()));
+  const fresh = POI_PRESETS.filter((v) => !lower.has(v.toLowerCase()));
+  if (!fresh.length) return list;
+
+  const pois = [...list, ...fresh].sort((a, b) => a.localeCompare(b));
   const { error } = await db().from('users').update({ pois }).eq('id', who.id);
   if (error) throw poiColumnError(error.message) || new AppError(error.message, 500);
   return pois;

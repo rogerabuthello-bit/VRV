@@ -24,12 +24,14 @@ export const handlers: Record<string, Handler> = {
   addBroker: account.addBroker as Handler,
   removeBroker: account.removeBroker as Handler,
   addPoi: account.addPoi as Handler,
+  addPoiPreset: account.addPoiPreset as Handler,
   removePoi: account.removePoi as Handler,
 
   // my setup
   addInstrument: setup.addInstrument as Handler,
   removeInstrument: setup.removeInstrument as Handler,
   saveInstrumentSpec: setup.saveInstrumentSpec as Handler,
+  addInstrumentPreset: setup.addInstrumentPreset as Handler,
   saveStrategy: setup.saveStrategy as Handler,
   removeStrategy: setup.removeStrategy as Handler,
 

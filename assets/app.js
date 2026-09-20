@@ -2,6 +2,8 @@ let ALL = [], INSTR = [], STRATS = [];
 
 const QUALS = ['Good Win','Bad Win','Good Loss','Bad Loss'];
 const EXITS = ['Target hit','Ran past target','Trailed stop hit','Stopped out','Manual close'];
+// Names only; the specs behind them live server-side so there is one source of truth.
+const INSTRUMENT_GROUPS = ['FX majors','FX yen pairs','Metals','Indices','Crypto'];
 const MISTAKES = ['Chased entry','Entered early','No setup','Moved stop','Oversized','Closed early','Held too long','Revenge trade','Overtraded'];
 const EMOTIONS = ['Calm','Confident','FOMO','Anxious','Frustrated','Bored','Tilted','Distracted'];
 let PICKED = [], EDITING = null, PENDING_EMAIL = '';                    // mistake tags, and the trade being edited
@@ -550,7 +552,7 @@ function renderSetup(){
     if(!confirm('Remove '+b.dataset.inst+' from your list? Past trades are kept.')) return;
     api('removeInstrument',b.dataset.inst,MYBROKER).then(load).catch(fail);
   });
-  fillBrokers(); renderInstrSpecs(); renderPoiList(); fillPois();
+  fillBrokers(); renderInstrSpecs(); renderPoiList(); renderPresets(); fillPois();
   $('setRisk').value=MYRISK;
   const ss=myStratObjs();
   $('myStratList').innerHTML = ss.length ? ss.map(s=>{
@@ -568,6 +570,28 @@ function renderSetup(){
     api('removeStrategy',b.dataset.del).then(load).catch(fail);
   });
 }
+
+function renderPresets(){
+  $('instrPresets').innerHTML = '<span class="p-l">Start from</span>'
+    + INSTRUMENT_GROUPS.map(g=>`<button type="button" class="ghost small" data-preset="${esc(g)}">${esc(g)}</button>`).join('');
+  $('instrPresets').querySelectorAll('[data-preset]').forEach(b=>b.onclick=()=>{
+    const g=b.dataset.preset; b.disabled=true; $('setInstrMsg').textContent='';
+    api('addInstrumentPreset', g, MYBROKER)
+      .then(r=>load().then(()=>{
+        $('setInstrMsg').textContent = r.added.length
+          ? `Added ${r.added.length} to ${MYBROKER||'(no broker set)'}. Check the pip values against your broker.`
+          : 'All of those are already on this broker.';
+      }))
+      .catch(e=>{ $('setInstrMsg').textContent = msgOf(e); })
+      .finally(()=>{ b.disabled=false; });
+  });
+}
+$('poiPreset').onclick = () => {
+  $('poiPreset').disabled=true; $('poiMsg').textContent='';
+  api('addPoiPreset').then(()=>load().then(()=>{ $('poiMsg').textContent='Common levels added. Remove any you do not trade.'; }))
+    .catch(e=>{ $('poiMsg').textContent=msgOf(e); })
+    .finally(()=>{ $('poiPreset').disabled=false; });
+};
 
 function renderPoiList(){
   $('myPoiList').innerHTML = POIS.length
@@ -596,18 +620,19 @@ function renderInstrSpecs(){
   const ins=INSTR.filter(i=>i.trader===ME && (i.broker||'')===MYBROKER)
     .sort((a,b)=>String(a.name).localeCompare(String(b.name)));
   if(!ins.length){ $('instrSpecs').innerHTML=''; return; }
-  $('instrSpecs').innerHTML='<table class="spec-tbl"><tr><th>Instrument</th><th>Pip size</th><th>Value per pip (1 lot)</th><th>Lot step</th><th></th></tr>'
+  $('instrSpecs').innerHTML='<table class="spec-tbl"><tr><th>Instrument</th><th>Pip size</th><th>Value per pip (1 lot)</th><th>Lot step</th><th>Commission / lot</th><th></th></tr>'
     + ins.map(i=>`<tr><td><b>${esc(i.name)}</b></td>`
         + `<td><input type="number" step="any" min="0" data-sp="pip" data-for="${esc(i.name)}" value="${i.pipSize??''}" placeholder="0.0001"></td>`
         + `<td><input type="number" step="any" min="0" data-sp="val" data-for="${esc(i.name)}" value="${i.valuePerPip??''}" placeholder="10"></td>`
         + `<td><input type="number" step="any" min="0" data-sp="step" data-for="${esc(i.name)}" value="${i.lotStep??0.01}"></td>`
+        + `<td><input type="number" step="any" min="0" data-sp="comm" data-for="${esc(i.name)}" value="${i.commissionPerLot??0}"></td>`
         + `<td><button type="button" class="ghost small" data-spsave="${esc(i.name)}">Save</button> <span class="hint" data-spmsg="${esc(i.name)}"></span></td></tr>`).join('')
     + '</table>';
   $('instrSpecs').querySelectorAll('[data-spsave]').forEach(b=>b.onclick=()=>{
     const n=b.dataset.spsave, pick=k=>$('instrSpecs').querySelector(`[data-sp="${k}"][data-for="${CSS.escape(n)}"]`).value;
     const msg=$('instrSpecs').querySelector(`[data-spmsg="${CSS.escape(n)}"]`);
     msg.textContent='Saving…';
-    api('saveInstrumentSpec',n,{pipSize:pick('pip'),valuePerPip:pick('val'),lotStep:pick('step'),broker:MYBROKER})
+    api('saveInstrumentSpec',n,{pipSize:pick('pip'),valuePerPip:pick('val'),lotStep:pick('step'),commissionPerLot:pick('comm'),broker:MYBROKER})
       .then(()=>{ msg.textContent='Saved'; return load(); })
       .catch(e=>{ msg.textContent=msgOf(e); });
   });
@@ -693,6 +718,11 @@ function preview(){
   if(o.r!=null) out.push('Result '+fmt(o.r)+'R ('+o.out+')');
   const f=$('fsl').value, s=$('sl').value;
   if(f!=='' && +f!==+s) out.push('SL trailed');
+  const c=+$('comm').value;
+  if(c>0){
+    const gross = (o.r!=null && +$('risk').value) ? o.r * +$('risk').value : null;
+    out.push(gross!=null ? `Commission ${fmt(c)} · net ${fmt(gross-c)}` : `Commission ${fmt(c)}`);
+  }
   $('preview').textContent=out.join('  •  ');
   updateQuality(); updateExitHint();
 }
@@ -1137,9 +1167,29 @@ function recalcSize(){
     $('lotsHint').textContent = hasSpec(sp) ? 'Fill entry and initial SL' : "Set this instrument's pip value in My Setup";
     $('riskHint').textContent = 'Type a risk and the lot size follows';
   }
+  syncCommission();
   renderPipStrip();
   preview();
 }
+
+/**
+ * Prefills commission from the instrument's rate, but stops the moment the
+ * trader types their own - a rate that changed for one trade should not be
+ * overwritten by the next keystroke elsewhere on the form.
+ */
+let COMM_TOUCHED = false;
+function syncCommission(){
+  const sp = specOf($('instr').value), lots = +$('lots').value;
+  const rate = sp && sp.commissionPerLot > 0 ? sp.commissionPerLot : 0;
+  if(!COMM_TOUCHED){
+    $('comm').value = (rate && lots > 0) ? Math.round(rate * lots * 100) / 100 : '';
+  }
+  $('commHint').textContent = COMM_TOUCHED
+    ? 'You set this for this trade'
+    : rate ? fmt(rate) + ' per lot from My Setup'
+           : 'No rate set for this instrument';
+}
+$('comm').addEventListener('input', () => { COMM_TOUCHED = true; syncCommission(); preview(); });
 $('lots').addEventListener('input',()=>{ SIZE_SRC='lots'; recalcSize(); renderCalc(); });
 $('risk').addEventListener('input',()=>{ SIZE_SRC='risk'; recalcSize(); renderCalc(); });
 ['calcPct','entry','sl','tp','ccy'].forEach(id=>$(id).addEventListener('input',()=>{ recalcSize(); renderCalc(); }));
@@ -1179,7 +1229,7 @@ function updateQuality(){
 $('add').onclick = () => {
   const t={broker:brokerOf(),date:$('date').value,time:$('ttime').value,closeTime:$('xtime').value,closeDate:$('xdate').value,timezone:$('tz').value,currency:$('ccy').value,session:$('sess').value,instrument:$('instr').value,strategy:$('strat').value,direction:$('dir').value,
     entry:$('entry').value,sl:$('sl').value,finalSl:$('fsl').value,tp:$('tp').value,exit:$('exit').value,
-    risk:$('risk').value,lots:$('lots').value,confidence:$('conf').value,mistakes:PICKED,emotion:$('emotion').value,rulesFollowed:checkedRules(),poi:$('poi').value,exitReason:$('xreason').value,shots:SHOTS,quality:$('quality').value,notes:$('notes').value};
+    risk:$('risk').value,lots:$('lots').value,commission:$('comm').value,confidence:$('conf').value,mistakes:PICKED,emotion:$('emotion').value,rulesFollowed:checkedRules(),poi:$('poi').value,exitReason:$('xreason').value,shots:SHOTS,quality:$('quality').value,notes:$('notes').value};
   $('add').disabled=true; $('msg').textContent=SHOTS.length?'Uploading screenshots…':'Saving…';
   const saving = EDITING
     ? api('updateTrade', EDITING, t)
@@ -1189,7 +1239,7 @@ $('add').onclick = () => {
     const verb = EDITING ? 'Updated' : 'Saved';
     if(EDITING) endEdit();
     $('msg').textContent=`${verb}: ${r.outcome} ${fmt(r.r)}R${r.trailed==='Yes'?' (trailed)':''} · ${r.session}`;
-    ['entry','sl','fsl','tp','exit','risk','lots','notes'].forEach(i=>$(i).value=''); $('quality').value=''; $('ttime').value=''; $('xtime').value=''; $('xdate').value=''; $('xreason').value=''; $('emotion').value=''; $('sess').value=''; fillPois(''); PICKED=[]; renderMistakes(); renderRules(); setConf(''); SHOTS=[]; renderThumbs(); preview(); tzPreview(); load().catch(fail);
+    ['entry','sl','fsl','tp','exit','risk','lots','comm','notes'].forEach(i=>$(i).value=''); COMM_TOUCHED=false; $('quality').value=''; $('ttime').value=''; $('xtime').value=''; $('xdate').value=''; $('xreason').value=''; $('emotion').value=''; $('sess').value=''; fillPois(''); PICKED=[]; renderMistakes(); renderRules(); setConf(''); SHOTS=[]; renderThumbs(); preview(); tzPreview(); load().catch(fail);
   }).catch(e=>{ $('add').disabled=false; const m=(e&&e.message)||String(e); if(/AUTH/.test(m)) return fail(e); $('msg').textContent='Error: '+m; });
 };
 function startEdit(id){
@@ -1215,6 +1265,7 @@ function startEdit(id){
   fillExitReason(); $('xreason').value = EXITS.includes(t.exitReason) ? t.exitReason : '';
   setConf(String(t.confidence||''));
   SIZE_SRC='lots';
+  $('comm').value = t.commission || ''; COMM_TOUCHED = !!t.commission;
   PICKED = (t.mistakes||[]).filter(m=>MISTAKES.includes(m)); renderMistakes();
   fillEmotions(); $('emotion').value = EMOTIONS.includes(t.emotion) ? t.emotion : '';
   renderRules(t.rulesFollowed||[]); fillPois(t.poi||'');
@@ -1234,6 +1285,7 @@ function endEdit(){
   ['entry','sl','fsl','tp','exit','risk','lots','notes'].forEach(i=>$(i).value='');
   $('quality').value=''; $('ttime').value=''; $('xtime').value=''; $('xdate').value='';
   $('xreason').value=''; $('emotion').value=''; $('sess').value=''; fillPois('');
+  $('comm').value=''; COMM_TOUCHED=false;
   SIZE_SRC='lots'; setDir('Long');
   PICKED=[]; renderMistakes(); renderRules(); setConf(''); SHOTS=[]; renderThumbs();
   $('msg').textContent=''; preview(); tzPreview(); recalcSize(); renderCalc();
@@ -1279,6 +1331,7 @@ function calc(list){
     avgHold:(()=>{const h=list.map(holdMin).filter(x=>x!=null);return h.length?h.reduce((a,b)=>a+b,0)/h.length:null;})(),
     avgRiskPct:(()=>{const p=list.map(t=>+t.riskPct).filter(x=>x>0);return p.length?p.reduce((a,b)=>a+b,0)/p.length:null;})(),
     overRisked:list.filter(t=>+t.riskPct>MYRISK*1.1).length,
+    commission:list.reduce((a,t)=>a+(+t.commission||0),0),
     // Per-trade Sharpe: expectancy divided by how wildly results scatter.
     sharpe:(()=>{ if(rs.length<2) return null;
       const m=totalR/rs.length, v=rs.reduce((a,x)=>a+(x-m)**2,0)/(rs.length-1);
@@ -1465,7 +1518,8 @@ function render(){
     c('Avg confidence (1-5)',s.avgConf==null?'–':fmt(s.avgConf,1)) +
     c('Avg hold time',fmtDur(s.avgHold)) +
     c('Avg risk per trade',s.avgRiskPct==null?'–':fmt(s.avgRiskPct,2)+'%',s.avgRiskPct>MYRISK*1.1?'neg':'') +
-    c('Over your risk plan',s.overRisked,s.overRisked?'neg':'pos');
+    c('Over your risk plan',s.overRisked,s.overRisked?'neg':'pos') +
+    c('Commission paid',s.commission?fmt(s.commission):'–',s.commission?'neg':'');
   kpiRow(list, s);
   drawCurve(list);
   trend(list);
@@ -1675,7 +1729,7 @@ function exportCsv(){
     ['Date',t=>t.date], ['Opened (UTC)',t=>t.openedUtc], ['Closed (UTC)',t=>t.closedUtc],
     ['Held (min)',t=>holdMin(t)??''], ['Session',t=>t.session], ['Trader',t=>t.trader],
     ['Instrument',t=>t.instrument], ['Direction',t=>t.direction], ['Strategy',t=>t.strategy],
-    ['Lots',t=>t.lots], ['Risk',t=>t.risk], ['Risk %',t=>t.riskPct], ['Currency',t=>t.currency],
+    ['Lots',t=>t.lots], ['Risk',t=>t.risk], ['Risk %',t=>t.riskPct], ['Commission',t=>t.commission], ['Currency',t=>t.currency],
     ['Entry',t=>t.entry], ['Initial SL',t=>t.sl], ['Final SL',t=>t.finalSl], ['SL trailed',t=>t.trailed],
     ['Initial TP',t=>t.tp], ['Exit',t=>t.exit], ['How it ended',t=>exitOf(t)],
     ['Planned RR',t=>t.plannedRR], ['R',t=>t.r], ['PnL',t=>t.pnl], ['Outcome',t=>t.outcome],

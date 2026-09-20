@@ -485,6 +485,14 @@
   .fs-sub{font-size:11.5px;color:var(--mut-2)}
   .formsec .rulebox{margin-top:4px}
 
+  /* ---------------- preset groups ---------------- */
+  .presets{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-top:11px}
+  .presets .p-l{
+    font-family:var(--font-mono);font-size:9.5px;font-weight:600;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--mut-2);margin-right:2px;
+  }
+  .presets button{font-size:12px;padding:6px 11px}
+
   /* ---------------- broker bar ---------------- */
   .brokerbar{
     margin-bottom:16px;padding:12px 13px;
@@ -955,6 +963,7 @@
       <div class="field"><label for="xreason">How it ended</label><select id="xreason"></select><div class="hint" id="xreasonHint">Worked out from your prices</div></div>
       <div class="field"><label for="lots">Lot size</label><input type="number" step="any" min="0" id="lots" inputmode="decimal"><div class="hint" id="lotsHint">Type either this or the risk amount</div></div>
       <div class="field"><label for="risk">Risk amount</label><input type="number" step="any" min="0" id="risk" inputmode="decimal"><div class="hint" id="riskHint">Type a risk and the lot size follows</div></div>
+      <div class="field"><label for="comm">Commission</label><input type="number" step="any" min="0" id="comm" inputmode="decimal"><div class="hint" id="commHint">From your broker's rate per lot</div></div>
       <div class="field"><label for="ccy">Currency</label><select id="ccy"></select><div class="hint">Your base currency by default</div></div>
     </div></div>
 
@@ -1203,6 +1212,8 @@
           <div class="hint" id="brokerMsg"></div>
         </div>
         <div class="add-inline" style="margin-top:0"><input id="setInstr" placeholder="e.g. EURUSD, XAUUSD, NAS100" aria-label="Instrument names"><button id="setInstrAdd" type="button">Add instrument</button></div>
+        <div class="presets" id="instrPresets"></div>
+        <div class="hint" id="setInstrMsg"></div>
         <div class="chips" id="myInstrList"></div>
         <div class="scroll" id="instrSpecs" style="margin-top:14px"></div>
         <div class="hint" style="margin-top:8px">One pip on one lot. A standard FX lot is usually pip size <b>0.0001</b> and <b>10</b> per pip (JPY pairs use <b>0.01</b>). Check your broker &mdash; it decides these, not us.</div>
@@ -1246,6 +1257,7 @@
       <h2>Points of interest</h2>
       <p class="hint" style="margin-top:0">The levels and structures you trade. Tag one on every trade and the dashboard shows which pay, and which strategy they pay with.</p>
       <div class="add-inline" style="margin-top:0"><input id="newPoi" maxlength="80" placeholder="e.g. Order block, Fair value gap" aria-label="New point of interest"><button id="addPoi" type="button">Add POI</button></div>
+      <div class="presets"><span class="p-l">Start from</span><button type="button" class="ghost small" id="poiPreset">Common levels</button></div>
       <div class="chips" id="myPoiList"></div>
       <div class="hint" id="poiMsg"></div>
     </section>

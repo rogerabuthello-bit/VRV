@@ -48,7 +48,7 @@ function closedAt(t: Record<string, unknown>, openDate: string, opened: Date, of
 /** Columns added by later migrations; a database missing one still works. */
 const OPTIONAL_COLUMNS = [
   'closed_utc', 'exit_reason', 'lots', 'risk_pct', 'mistakes', 'emotion',
-  'rules_followed', 'rules_total', 'broker', 'poi',
+  'rules_followed', 'rules_total', 'broker', 'poi', 'commission',
 ];
 
 /**
@@ -98,7 +98,7 @@ async function buildTradeRow(
   ).trim().slice(0, 60);
 
   const [{ data: haveInstr }, { data: haveStrat }] = await Promise.all([
-    supabase.from('instruments').select('id, pip_size, value_per_pip')
+    supabase.from('instruments').select('id, pip_size, value_per_pip, commission_per_lot')
       .eq('user_id', who.id).eq('name', instrument).eq('broker', broker).maybeSingle(),
     supabase.from('strategies').select('name, rules').eq('user_id', who.id).eq('name', strategy).maybeSingle(),
   ]);
@@ -149,7 +149,22 @@ async function buildTradeRow(
   const riskDist = entry - sl;
   const resultR = round((exit - entry) / riskDist, 2);
   const plannedRR = tp === null ? null : round(Math.abs(tp - entry) / Math.abs(riskDist), 2);
-  const pnl = risk ? round(resultR * risk, 2) : null;
+  /*
+   * Commission comes off the result. A journal that reports gross shows a
+   * profit the account never saw, and on a scalping model the difference is
+   * the whole edge. R stays a price measure and is untouched by it.
+   */
+  const spec2 = haveInstr as { commission_per_lot?: number | null };
+  const perLot = Number(spec2?.commission_per_lot) || 0;
+  const typedCommission = num(t.commission);
+  const commission = round(
+    Math.max(0, typedCommission !== null ? typedCommission : perLot * (lots ?? 0)),
+    2,
+  );
+  const grossPnl = risk ? round(resultR * risk, 2) : null;
+  const pnl = grossPnl === null
+    ? (commission ? round(-commission, 2) : null)
+    : round(grossPnl - commission, 2);
   const outcome = resultR > 0.05 ? 'Win' : resultR < -0.05 ? 'Loss' : 'BE';
 
   const quality = String(t.quality || '').trim();
@@ -236,6 +251,7 @@ async function buildTradeRow(
       exit_price: exit,
       risk: risk || null,
       lots,
+      commission,
       planned_rr: plannedRR,
       result_r: resultR,
       pnl,
@@ -262,6 +278,8 @@ async function buildTradeRow(
     r: resultR,
     plannedRR: plannedRR === null ? '' : plannedRR,
     pnl: pnl === null ? '' : pnl,
+    grossPnl: grossPnl === null ? '' : grossPnl,
+    commission,
     outcome,
     trailed: slTrailed ? 'Yes' : 'No',
     session,

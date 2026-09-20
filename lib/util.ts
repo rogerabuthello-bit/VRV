@@ -99,6 +99,50 @@ export function pickFrom(raw: unknown, allowed: readonly string[]): string[] {
   return allowed.filter((v) => got.has(v));
 }
 
+/**
+ * Starter instrument specs, so setup is not a blank page. These are the
+ * conventional figures for a standard lot; brokers differ, which is why the
+ * spec table sits right beside the button that adds them.
+ */
+export const INSTRUMENT_PRESETS: Record<string, { name: string; pipSize: number; valuePerPip: number; lotStep: number }[]> = {
+  'FX majors': [
+    { name: 'EURUSD', pipSize: 0.0001, valuePerPip: 10, lotStep: 0.01 },
+    { name: 'GBPUSD', pipSize: 0.0001, valuePerPip: 10, lotStep: 0.01 },
+    { name: 'AUDUSD', pipSize: 0.0001, valuePerPip: 10, lotStep: 0.01 },
+    { name: 'NZDUSD', pipSize: 0.0001, valuePerPip: 10, lotStep: 0.01 },
+    { name: 'USDCAD', pipSize: 0.0001, valuePerPip: 10, lotStep: 0.01 },
+    { name: 'USDCHF', pipSize: 0.0001, valuePerPip: 10, lotStep: 0.01 },
+  ],
+  'FX yen pairs': [
+    { name: 'USDJPY', pipSize: 0.01, valuePerPip: 10, lotStep: 0.01 },
+    { name: 'EURJPY', pipSize: 0.01, valuePerPip: 10, lotStep: 0.01 },
+    { name: 'GBPJPY', pipSize: 0.01, valuePerPip: 10, lotStep: 0.01 },
+    { name: 'AUDJPY', pipSize: 0.01, valuePerPip: 10, lotStep: 0.01 },
+  ],
+  Metals: [
+    { name: 'XAUUSD', pipSize: 0.01, valuePerPip: 1, lotStep: 0.01 },
+    { name: 'XAGUSD', pipSize: 0.01, valuePerPip: 5, lotStep: 0.01 },
+  ],
+  Indices: [
+    { name: 'US30', pipSize: 1, valuePerPip: 1, lotStep: 0.1 },
+    { name: 'NAS100', pipSize: 1, valuePerPip: 1, lotStep: 0.1 },
+    { name: 'SPX500', pipSize: 1, valuePerPip: 1, lotStep: 0.1 },
+    { name: 'GER40', pipSize: 1, valuePerPip: 1, lotStep: 0.1 },
+    { name: 'UK100', pipSize: 1, valuePerPip: 1, lotStep: 0.1 },
+  ],
+  Crypto: [
+    { name: 'BTCUSD', pipSize: 1, valuePerPip: 1, lotStep: 0.01 },
+    { name: 'ETHUSD', pipSize: 1, valuePerPip: 1, lotStep: 0.01 },
+  ],
+};
+
+/** A starting vocabulary of levels, so the POI picker is never empty. */
+export const POI_PRESETS = [
+  'Order block', 'Fair value gap', 'Liquidity sweep', 'Breaker block',
+  'Supply zone', 'Demand zone', 'Support', 'Resistance', 'Trendline',
+  'Previous day high/low', 'Session high/low', 'Round number',
+];
+
 export const MAX_SHOTS = 4;
 export const MAX_SHOT_BYTES = 4 * 1024 * 1024;
 

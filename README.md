@@ -144,6 +144,30 @@ you give it instruments. In My Setup the list is a switcher showing each
 broker's instrument count; removing one is refused while instruments still
 hang off it, since those pip values are the whole point of the broker.
 
+### Starting from something
+
+My Setup carries preset groups — FX majors, FX yen pairs, Metals, Indices,
+Crypto — that add instruments with the conventional specs already filled in,
+and a common-levels button that seeds the POI library. They skip anything
+already present, so they never overwrite a spec you have tuned. The figures
+are the usual ones for a standard lot; brokers differ, which is why the spec
+table sits directly beside the button that adds them.
+
+### Commission
+
+Each instrument spec carries a **commission per lot**, and the trade form
+prefills the charge from your lot size. Type your own and it stops tracking —
+a rate that changed for one trade should not be overwritten by the next
+keystroke elsewhere on the form.
+
+Commission comes off the result, so stored PnL and therefore equity are net.
+A journal that reports gross shows a profit the account never saw, and on a
+scalping model that difference is the whole edge:
+
+> 0.20R on 2 lots at 7 a lot — gross 20.00, commission 14.00, **net 6.00**
+
+R stays a price measure and is untouched by it.
+
 ### Risk intelligence
 
 Lot size and risk amount are two views of one decision, so whichever you type
