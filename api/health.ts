@@ -35,6 +35,21 @@ function label(key: string): string {
   }
 }
 
+/**
+ * GoTrue packs the address it will return the user to into the `state` token.
+ * Read only - this is a diagnostic, nothing is trusted from it.
+ */
+function readState(token: string): Record<string, unknown> | null {
+  try {
+    const body = token.split('.')[1];
+    if (!body) return null;
+    const json = Buffer.from(body.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+    return JSON.parse(json) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   let timer: NodeJS.Timeout;
   const timeout = new Promise<never>((_, reject) => {
@@ -63,6 +78,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const superadmin = (process.env.SUPERADMIN_USERNAME || 'ROGERB').trim();
   const bootstrap = (process.env.BOOTSTRAP_INVITE_CODE || '').trim();
   const bucket = process.env.SUPABASE_SCREENSHOT_BUCKET || 'screenshots';
+
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '');
+  const origin = host ? `https://${host}` : '';
 
   const checks: Record<string, Check> = {};
   const next: string[] = [];
@@ -135,6 +153,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             + 'Settings, or have people use "Continue with Google", which sends no email.',
           );
         }
+        /*
+         * Ask Supabase to start a Google sign-in and read back where it says
+         * it will return the user. An address that is not on the allow list is
+         * silently swapped for the Site URL - which defaults to localhost -
+         * and the trader lands on a dead page having never reached the app.
+         */
+        if (providers.google && origin) {
+          try {
+            const back = `${origin}/`;
+            const probe = await withTimeout(fetch(
+              `${url}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(back)}`,
+              { redirect: 'manual', headers: { apikey: anon } },
+            ), 8000);
+            const loc = probe.headers.get('location') || '';
+
+            if (/^https:\/\/accounts\.google\.com\//.test(loc)) {
+              const state = new URL(loc).searchParams.get('state') || '';
+              const lands = String(readState(state)?.referrer || '');
+              checks.googleRedirect = lands.startsWith(origin)
+                ? ok(`Google returns the user to ${lands}`)
+                : bad(
+                  `Google would return the user to "${lands || 'the Site URL'}", not ${origin}. `
+                  + `That page is where sign-in dies. Add ${origin} as the Site URL AND under `
+                  + 'Redirect URLs in Supabase > Authentication > URL Configuration.',
+                );
+            } else {
+              checks.googleRedirect = bad(
+                `Supabase did not hand off to Google (HTTP ${probe.status}`
+                + `${loc ? `, sent to ${loc.slice(0, 200)}` : ''}). `
+                + 'Check the client ID and secret under Authentication > Providers > Google.',
+              );
+            }
+          } catch (e) {
+            checks.googleRedirect = bad(`could not test the Google hand-off (${(e as Error).message})`);
+          }
+        }
+
         checks.signupsAllowed = settings.disable_signup
           ? bad('signups are disabled in Supabase, so nobody new can be created')
           : ok('allowed');
@@ -230,8 +285,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   /* ----------------------------------------------------- redirect targets */
-  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '');
-  const origin = host ? `https://${host}` : '';
   checks.thisOrigin = ok(origin || 'unknown');
 
   for (const [name, c] of Object.entries(checks)) {
