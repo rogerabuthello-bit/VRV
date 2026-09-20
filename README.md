@@ -119,6 +119,31 @@ With a spec set, the risk amount on a trade is derived from the lot size
 rather than typed, which makes PnL exact instead of an estimate. Without one,
 you type the risk amount as before.
 
+### Brokers
+
+Pip values and lot steps are set by the broker, not the market, so a spec
+belongs to (trader, broker, instrument). Switching brokers, or adding a second
+one, leaves the settings you already proved out on the first untouched. Each
+trade records the broker it was taken on, so history still reads correctly
+after a move.
+
+### Risk intelligence
+
+Lot size and risk amount are two views of one decision, so whichever you type
+drives the other — size by money ("I'll risk 200") or by lots, whichever way
+you think.
+
+Past trades are then grouped into risk bands and the band with the best
+expectancy is your sweet spot. A band needs at least 5 trades before it counts
+as signal. When you size above that band, the form tells you what has actually
+happened to you there, in your own numbers:
+
+> Your best results come from 0.5-1% risk (1.10R a trade over 10). Above 1.0%
+> you have won 25% versus 70% — a 45 point drop, at -0.25R a trade.
+
+It also catches the opposite mistake. If your recent trades average well under
+your plan, your size has not kept up with your equity, and it says so.
+
 ### The psychology layer
 
 Performance numbers say *what* happened. These say *why*, which is the part you

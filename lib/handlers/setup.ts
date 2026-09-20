@@ -3,9 +3,17 @@ import { AppError } from '../errors';
 import { requireProfile } from '../auth';
 import { check } from '../query';
 
+/** Broker names are free text, trimmed and capped; '' means "no broker set". */
+export function cleanBroker(v: unknown): string {
+  return String(v || '').trim().slice(0, 60);
+}
+
 /** Add one or several (comma separated) instruments to MY list. */
-export async function addInstrument(bearer: string | undefined, names: unknown) {
+export async function addInstrument(bearer: string | undefined, names: unknown, rawBroker?: unknown) {
   const who = await requireProfile(bearer);
+  const broker = rawBroker === undefined
+    ? (who.profile as unknown as { active_broker?: string }).active_broker || ''
+    : cleanBroker(rawBroker);
   const list = [...new Set(
     String(names || '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean),
   )].slice(0, 50);
@@ -14,7 +22,10 @@ export async function addInstrument(bearer: string | undefined, names: unknown) 
 
   check(await db()
     .from('instruments')
-    .upsert(list.map((name) => ({ user_id: who.id, name })), { onConflict: 'user_id,name', ignoreDuplicates: true }));
+    .upsert(
+      list.map((name) => ({ user_id: who.id, name, broker })),
+      { onConflict: 'user_id,broker,name', ignoreDuplicates: true },
+    ));
   return list;
 }
 
@@ -27,6 +38,9 @@ export async function saveInstrumentSpec(bearer: string | undefined, rawName: un
   const name = String(rawName || '').trim().toUpperCase();
   if (!name) throw new AppError('Instrument name is required.');
   const o = (raw || {}) as Record<string, unknown>;
+  const broker = o.broker === undefined
+    ? (who.profile as unknown as { active_broker?: string }).active_broker || ''
+    : cleanBroker(o.broker);
 
   const positive = (v: unknown, label: string): number | null => {
     if (v === '' || v === null || v === undefined) return null;
@@ -47,6 +61,7 @@ export async function saveInstrumentSpec(bearer: string | undefined, rawName: un
     .update({ pip_size, value_per_pip, lot_step })
     .eq('user_id', who.id)
     .eq('name', name)
+    .eq('broker', broker)
     .select('name');
   if (error) {
     if (/pip_size|value_per_pip|lot_step/.test(error.message)) {
@@ -55,12 +70,16 @@ export async function saveInstrumentSpec(bearer: string | undefined, rawName: un
     throw new AppError(error.message, 500);
   }
   if (!data?.length) throw new AppError(`"${name}" is not in your instrument list.`);
-  return { name, pipSize: pip_size, valuePerPip: value_per_pip, lotStep: lot_step };
+  return { name, broker, pipSize: pip_size, valuePerPip: value_per_pip, lotStep: lot_step };
 }
 
-export async function removeInstrument(bearer: string | undefined, name: unknown) {
+export async function removeInstrument(bearer: string | undefined, name: unknown, rawBroker?: unknown) {
   const who = await requireProfile(bearer);
-  check(await db().from('instruments').delete().eq('user_id', who.id).eq('name', String(name || '')));
+  const broker = rawBroker === undefined
+    ? (who.profile as unknown as { active_broker?: string }).active_broker || ''
+    : cleanBroker(rawBroker);
+  check(await db().from('instruments').delete()
+    .eq('user_id', who.id).eq('name', String(name || '')).eq('broker', broker));
   return true;
 }
 

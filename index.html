@@ -413,6 +413,27 @@
   body.onboarding.locked #onboard{display:grid;min-height:100vh;place-items:center;padding:20px}
   #onboard{display:none}
 
+  /* ---------------- pips strip + direction ---------------- */
+  .pipstrip{
+    display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px;padding:11px 13px;
+    border:1px solid color-mix(in srgb,var(--accent-2) 34%,var(--line));
+    border-radius:var(--radius-sm);background:var(--card-2);
+  }
+  .pipcell{display:flex;flex-direction:column;gap:1px;min-width:92px;flex:1}
+  .pipcell .l{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--mut)}
+  .pipcell .v{font-size:16px;font-weight:700;color:var(--txt-strong);line-height:1.2}
+  .pipcell .v.over{color:var(--neg)}
+  .dirpick{display:flex;gap:8px}
+  .dirbtn{
+    flex:1;background:var(--inset);border:1px solid var(--line);color:var(--mut);
+    font-weight:700;padding:10px 8px;border-radius:var(--radius-sm);
+    transition:background .15s,border-color .15s,color .15s;
+  }
+  .dirbtn:hover{filter:none}
+  .dirbtn.long:hover,.dirbtn.long.on{background:color-mix(in srgb,var(--g) 20%,var(--inset));border-color:var(--g);color:var(--g)}
+  .dirbtn.short:hover,.dirbtn.short.on{background:color-mix(in srgb,var(--r) 20%,var(--inset));border-color:var(--r);color:var(--r)}
+  .dirbtn.on{box-shadow:inset 0 0 0 1px currentColor}
+
   /* ---------------- rules + tags ---------------- */
   .rulebox{margin-top:16px;padding:14px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--card-2)}
   .rules{display:flex;flex-direction:column;gap:9px;margin-top:4px}
@@ -539,6 +560,14 @@
   <!-- ADD TRADE -->
   <section class="card card-entry">
     <div class="card-head"><h2 id="entryTitle">Log a completed trade</h2><span class="badge live" id="editBadge" hidden>Editing an existing trade</span></div>
+    <div class="pipstrip" id="pipStrip">
+      <div class="pipcell"><span class="l">Stop</span><span class="v" id="pipSl">–</span></div>
+      <div class="pipcell"><span class="l">Target</span><span class="v" id="pipTp">–</span></div>
+      <div class="pipcell"><span class="l">Planned R:R</span><span class="v" id="pipRr">–</span></div>
+      <div class="pipcell"><span class="l">Lots</span><span class="v" id="pipLots">–</span></div>
+      <div class="pipcell"><span class="l">Risking</span><span class="v" id="pipRisk">–</span></div>
+      <div class="pipcell"><span class="l">of equity</span><span class="v" id="pipPct">–</span></div>
+    </div>
     <div class="grid form">
       <div class="field"><label for="date">Date (your local)</label><input type="date" id="date"></div>
       <div class="field"><label for="ttime">Time trade was taken</label><input type="time" id="ttime"></div>
@@ -546,6 +575,7 @@
       <div class="field"><label for="xdate">Closed on (if not the same day)</label><input type="date" id="xdate"><div class="hint">Blank = same day, or next day if earlier</div></div>
       <div class="field"><label for="tz">Time zone (UTC/GMT)</label><select id="tz"></select><div class="hint" id="tzHint">Defaults to your saved time zone</div></div>
       <div class="field"><label for="sess">Session</label><select id="sess"><option value="">Auto (from time)</option></select></div>
+      <div class="field"><label for="brokerSel">Broker</label><select id="brokerSel"></select><div class="hint">Pip settings are saved per broker</div></div>
       <div class="field"><label for="instr">Instrument</label>
         <select id="instr"></select>
         <div class="hint">Manage in <button type="button" class="link-btn" data-goto="setup">My Setup</button></div>
@@ -554,15 +584,21 @@
         <select id="strat"></select>
         <div class="hint">Manage in <button type="button" class="link-btn" data-goto="setup">My Setup</button></div>
       </div>
-      <div class="field"><label for="dir">Direction</label><select id="dir"><option>Long</option><option>Short</option></select></div>
+      <div class="field"><label id="dirLabel">Direction</label>
+        <input type="hidden" id="dir" value="Long">
+        <div class="dirpick" role="group" aria-labelledby="dirLabel">
+          <button type="button" class="dirbtn long on" data-dir="Long" aria-pressed="true">&#9650; Long</button>
+          <button type="button" class="dirbtn short" data-dir="Short" aria-pressed="false">&#9660; Short</button>
+        </div>
+      </div>
       <div class="field"><label for="entry">Entry</label><input type="number" step="any" id="entry" inputmode="decimal"></div>
       <div class="field"><label for="sl">Initial SL (planned)</label><input type="number" step="any" id="sl" inputmode="decimal"></div>
       <div class="field"><label for="fsl">Final SL (if trailed)</label><input type="number" step="any" id="fsl" inputmode="decimal"><div class="hint">Leave blank if not moved</div></div>
       <div class="field"><label for="tp">Initial TP (planned)</label><input type="number" step="any" id="tp" inputmode="decimal"></div>
       <div class="field"><label for="exit">Exit price</label><input type="number" step="any" id="exit" inputmode="decimal"><div class="hint">Where you actually closed &mdash; target, stop, trail or manual</div></div>
       <div class="field"><label for="xreason">How it ended</label><select id="xreason"></select><div class="hint" id="xreasonHint">Worked out from your prices</div></div>
-      <div class="field"><label for="lots">Lot size</label><input type="number" step="any" min="0" id="lots" inputmode="decimal"><div class="hint" id="lotsHint">Set the instrument's pip value in My Setup</div></div>
-      <div class="field"><label for="risk">Risk amount</label><input type="number" step="any" id="risk" inputmode="decimal"><div class="hint">Filled in from your lot size when it can be</div></div>
+      <div class="field"><label for="lots">Lot size</label><input type="number" step="any" min="0" id="lots" inputmode="decimal"><div class="hint" id="lotsHint">Type either this or the risk amount</div></div>
+      <div class="field"><label for="risk">Risk amount</label><input type="number" step="any" min="0" id="risk" inputmode="decimal"><div class="hint" id="riskHint">Type a risk and the lot size follows</div></div>
       <div class="field"><label for="ccy">Currency</label><select id="ccy"></select><div class="hint">Your base currency by default</div></div>
       <div class="field field-wide">
         <label id="confLabel" for="cbar">Confidence: &ldquo;I was confident in this trade&rdquo;</label>
@@ -702,6 +738,7 @@
     <div class="card"><h2>Trailed vs not trailed</h2><div class="scroll" id="byTrail"></div></div>
     <div class="card"><h2>How trades ended</h2><div class="scroll" id="byExit"></div></div>
     <div class="card"><h2>By feeling at entry</h2><div class="scroll" id="byEmotion"></div></div>
+    <div class="card card-focus"><h2>Results by risk taken</h2><div class="scroll" id="byRisk"></div></div>
   </div>
 
   <section class="card card-focus"><h2>What your mistakes cost</h2><div class="scroll" id="byMistake"></div></section>
@@ -718,6 +755,14 @@
       <section class="card">
         <h2>My instruments</h2>
         <div class="hint" style="margin:-6px 0 10px">The markets you trade. You can only log trades on instruments listed here. Separate several with commas.</div>
+        <div class="field" style="margin-bottom:12px"><label for="setBroker">Broker</label>
+          <div class="add-inline" style="margin-top:0">
+            <select id="setBroker"></select>
+            <input id="newBroker" placeholder="Add a broker…" style="max-width:190px">
+            <button id="addBroker" type="button">Add</button>
+          </div>
+          <div class="hint" id="brokerMsg">Instruments and pip values below belong to this broker. Switch brokers and the old settings stay put.</div>
+        </div>
         <div class="add-inline" style="margin-top:0"><input id="setInstr" placeholder="e.g. EURUSD, XAUUSD, NAS100" aria-label="Instrument names"><button id="setInstrAdd" type="button">Add</button></div>
         <div class="chips" id="myInstrList"></div>
         <div class="scroll" id="instrSpecs" style="margin-top:14px"></div>

@@ -6,7 +6,12 @@ const MISTAKES = ['Chased entry','Entered early','No setup','Moved stop','Oversi
 const EMOTIONS = ['Calm','Confident','FOMO','Anxious','Frustrated','Bored','Tilted','Distracted'];
 let PICKED = [], EDITING = null, PENDING_EMAIL = '';                    // mistake tags, and the trade being edited
 let MYRISK = 1;                                     // planned risk per trade, % of equity
-const specOf = name => INSTR.find(i => i.trader===ME && i.name===name) || null;
+let MYBROKER = '';                                  // whose pip settings we are using
+let SIZE_SRC = 'lots';                              // which of lots / risk the trader last typed
+const brokerOf = () => $('brokerSel').value || '';
+const specOf = name => INSTR.find(i => i.trader===ME && i.name===name && (i.broker||'')===brokerOf()) || null;
+const myBrokers = () => [...new Set(INSTR.filter(i=>i.trader===ME).map(i=>i.broker||''))]
+  .concat(MYBROKER).filter((v,i,a)=>a.indexOf(v)===i).sort();
 const hasSpec = sp => !!(sp && sp.pipSize>0 && sp.valuePerPip>0);
 // Must stay in step with riskOfPosition()/lotsForRisk() in lib/util.ts.
 function riskOfPosition(entry, sl, lots, sp){
@@ -279,6 +284,15 @@ function setConf(v){
   $('clabel').textContent = v===''?'Tap a level: 1 Strongly disagree · 5 Strongly agree':CLAB[v];
 }
 document.querySelectorAll('#cbar button').forEach(b=>b.onclick=()=>setConf(String(b.dataset.v)));
+function setDir(v){
+  $('dir').value = v==='Short' ? 'Short' : 'Long';
+  document.querySelectorAll('[data-dir]').forEach(b=>{
+    const on = b.dataset.dir===$('dir').value;
+    b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
+  });
+  preview(); recalcSize(); renderCalc();
+}
+document.querySelectorAll('[data-dir]').forEach(b=>b.onclick=()=>setDir(b.dataset.dir));
 const CCOL=['','#ef4444','#f97316','#facc15','#84cc16','#22c55e'];
 const miniBar=v=>{v=+v||0; if(!v) return '–'; return '<span class="cmini" title="'+v+'/5">'+[1,2,3,4,5].map(i=>`<i style="${i<=v?'background:'+CCOL[v]:''}"></i>`).join('')+'</span>';};
 $('date').value = new Date().toLocaleDateString('en-CA');
@@ -301,13 +315,15 @@ function load(){
     fillForm(); fillFilters();
     if(!SCOPE_TOUCHED){ $('fTrader').value = ALL.some(t=>t.trader===ME) ? ME : '__ALL__'; }
     MYRISK=+d.riskPct||1; if(!$('calcPct').value) $('calcPct').value=MYRISK;
+    MYBROKER=d.broker||''; fillBrokers();
     fillTz(); fillCcy(); fillExitReason(); fillEmotions(); renderMistakes(); renderRules();
-    render(); renderSetup(); syncRiskFromLots(); renderCalc();
+    render(); renderSetup(); recalcSize(); renderCalc();
+    if(!EDITING) setDir($('dir').value || 'Long');
     if(wasLocked) showTab('dash');
   });
 }
 
-const myInstr = () => INSTR.filter(i=>i.trader===ME).map(i=>i.name).sort();
+const myInstr = () => INSTR.filter(i=>i.trader===ME && (i.broker||'')===brokerOf()).map(i=>i.name).sort();
 const myStratObjs = () => STRATS.filter(s=>s.trader===ME).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
 const myStrats = () => myStratObjs().map(s=>s.name);
 function fillForm(sel){
@@ -516,15 +532,15 @@ $('obCcy').innerHTML=ccyOptions(guessCcy());
 // ---- My Setup tab ----
 function renderSetup(){
   renderFunds(); if(!$('fdDate').value) $('fdDate').value=new Date().toISOString().slice(0,10);
-  const ins=myInstr();
+  const ins=INSTR.filter(i=>i.trader===ME && (i.broker||'')===MYBROKER).map(i=>i.name).sort();
   $('myInstrList').innerHTML = ins.length
     ? ins.map(n=>`<span class="chip">${esc(n)}<button type="button" class="chip-x" data-inst="${esc(n)}" aria-label="Remove ${esc(n)}">✕</button></span>`).join('')
     : '<span class="hint">No instruments yet – add the markets you trade.</span>';
   $('myInstrList').querySelectorAll('[data-inst]').forEach(b=>b.onclick=()=>{
     if(!confirm('Remove '+b.dataset.inst+' from your list? Past trades are kept.')) return;
-    api('removeInstrument',b.dataset.inst).then(load).catch(fail);
+    api('removeInstrument',b.dataset.inst,MYBROKER).then(load).catch(fail);
   });
-  renderInstrSpecs();
+  fillBrokers(); renderInstrSpecs();
   $('setRisk').value=MYRISK;
   const ss=myStratObjs();
   $('myStratList').innerHTML = ss.length ? ss.map(s=>{
@@ -544,7 +560,8 @@ function renderSetup(){
 }
 
 function renderInstrSpecs(){
-  const ins=INSTR.filter(i=>i.trader===ME).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  const ins=INSTR.filter(i=>i.trader===ME && (i.broker||'')===MYBROKER)
+    .sort((a,b)=>String(a.name).localeCompare(String(b.name)));
   if(!ins.length){ $('instrSpecs').innerHTML=''; return; }
   $('instrSpecs').innerHTML='<table class="spec-tbl"><tr><th>Instrument</th><th>Pip size</th><th>Value per pip (1 lot)</th><th>Lot step</th><th></th></tr>'
     + ins.map(i=>`<tr><td><b>${esc(i.name)}</b></td>`
@@ -557,7 +574,7 @@ function renderInstrSpecs(){
     const n=b.dataset.spsave, pick=k=>$('instrSpecs').querySelector(`[data-sp="${k}"][data-for="${CSS.escape(n)}"]`).value;
     const msg=$('instrSpecs').querySelector(`[data-spmsg="${CSS.escape(n)}"]`);
     msg.textContent='Saving…';
-    api('saveInstrumentSpec',n,{pipSize:pick('pip'),valuePerPip:pick('val'),lotStep:pick('step')})
+    api('saveInstrumentSpec',n,{pipSize:pick('pip'),valuePerPip:pick('val'),lotStep:pick('step'),broker:MYBROKER})
       .then(()=>{ msg.textContent='Saved'; return load(); })
       .catch(e=>{ msg.textContent=msgOf(e); });
   });
@@ -617,7 +634,7 @@ $('fdAdd').onclick=()=>{
 };
 $('setInstrAdd').onclick=()=>{
   const v=$('setInstr').value.trim(); if(!v) return;
-  api('addInstrument',v).then(()=>{ $('setInstr').value=''; return load(); }).catch(fail);
+  api('addInstrument',v,MYBROKER).then(()=>{ $('setInstr').value=''; return load(); }).catch(fail);
 };
 $('setInstr').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('setInstrAdd').click(); } });
 $('stSave').onclick=()=>{
@@ -646,6 +663,30 @@ function preview(){
   $('preview').textContent=out.join('  •  ');
   updateQuality(); updateExitHint();
 }
+function fillBrokers(){
+  const list = myBrokers(), label = b => b || '(no broker set)';
+  const opts = sel => list.map(b=>`<option value="${esc(b)}"${b===sel?' selected':''}>${esc(label(b))}</option>`).join('');
+  const cur = $('brokerSel').value || MYBROKER;
+  $('brokerSel').innerHTML = opts(list.includes(cur) ? cur : MYBROKER);
+  $('setBroker').innerHTML = opts(MYBROKER);
+}
+$('brokerSel').addEventListener('change', () => { fillForm(); recalcSize(); renderCalc(); renderInstrSpecs(); });
+$('setBroker').addEventListener('change', () => {
+  api('saveBroker', $('setBroker').value).then(b=>{
+    MYBROKER=b; $('brokerSel').value=b; $('brokerMsg').textContent='Now using: ' + (b || '(no broker set)');
+    fillBrokers(); fillForm(); renderInstrSpecs(); recalcSize(); renderCalc();
+  }).catch(fail);
+});
+$('addBroker').onclick = () => {
+  const name = $('newBroker').value.trim();
+  if(!name) return;
+  api('saveBroker', name).then(b=>{
+    MYBROKER=b; $('newBroker').value='';
+    $('brokerMsg').textContent='Added "' + b + '". Add its instruments and pip values below.';
+    fillBrokers(); $('brokerSel').value=b; fillForm(); renderInstrSpecs(); recalcSize(); renderCalc();
+  }).catch(fail);
+};
+
 function fillExitReason(){
   const cur = $('xreason').value;
   $('xreason').innerHTML = '<option value="">Auto (from prices)</option>'
@@ -704,6 +745,90 @@ function updateRuleHint(){
 }
 $('strat').addEventListener('change', () => renderRules());
 
+/* ---------------- risk intelligence ----------------
+ * Everything here is measured from the trader's OWN history. Sizing advice
+ * from a textbook is easy to ignore; "you lose money above 2%, here is the
+ * number" is not.
+ */
+const RISK_BANDS = [
+  { k:'under 0.5%', lo:0,   hi:0.5 },
+  { k:'0.5-1%',     lo:0.5, hi:1 },
+  { k:'1-2%',       lo:1,   hi:2 },
+  { k:'2-3%',       lo:2,   hi:3 },
+  { k:'over 3%',    lo:3,   hi:Infinity },
+];
+const MIN_BAND_SAMPLE = 5;                 // below this, a band is noise
+
+function riskBands(list){
+  const scoped = list.filter(t => +t.riskPct > 0);
+  return RISK_BANDS.map(b => {
+    const hit = scoped.filter(t => +t.riskPct > b.lo && +t.riskPct <= b.hi);
+    return hit.length ? { ...b, ...calc(hit), avgRiskPct: hit.reduce((a,t)=>a+ +t.riskPct,0)/hit.length } : null;
+  }).filter(Boolean);
+}
+
+/** The band with the best expectancy, ignoring ones too small to trust. */
+function sweetSpot(list){
+  const solid = riskBands(list).filter(b => b.n >= MIN_BAND_SAMPLE && b.avgR != null);
+  if(!solid.length) return null;
+  return solid.reduce((best,b) => b.avgR > best.avgR ? b : best);
+}
+
+const myTrades = () => ALL.filter(t => t.trader === ME);
+
+/** What happens to this trader when they size above a given risk level. */
+function aboveBelow(list, pct){
+  const scoped = list.filter(t => +t.riskPct > 0);
+  const above = scoped.filter(t => +t.riskPct > pct);
+  const below = scoped.filter(t => +t.riskPct <= pct);
+  return { above: above.length?calc(above):null, below: below.length?calc(below):null,
+           nAbove: above.length, nBelow: below.length };
+}
+
+/**
+ * The warning that matters: at this size, what has actually happened to this
+ * trader before? Silent unless their own record says something.
+ */
+function riskVerdict(pct){
+  if(pct==null || !(pct>0)) return '';
+  const mine = myTrades();
+  const spot = sweetSpot(mine);
+  const bits = [];
+
+  if(spot){
+    if(pct > spot.hi){
+      const cut = aboveBelow(mine, spot.hi);
+      if(cut.above && cut.below && cut.nAbove >= MIN_BAND_SAMPLE){
+        const wrDrop = (cut.below.winRate!=null && cut.above.winRate!=null)
+          ? cut.below.winRate - cut.above.winRate : null;
+        bits.push(`<br>Your best results come from <b>${spot.k}</b> risk `
+          + `(${fmt(spot.avgR)}R a trade over ${spot.n}). `
+          + `Above ${fmt(spot.hi,1)}% you have won <b class="neg">${fmt(cut.above.winRate,0)}%</b> `
+          + `versus ${fmt(cut.below.winRate,0)}%`
+          + (wrDrop!=null && wrDrop>0 ? ` &mdash; a <b class="neg">${fmt(wrDrop,0)} point</b> drop` : '')
+          + `, at ${fmt(cut.above.avgR)}R a trade.`);
+      } else {
+        bits.push(`<br>Your best results come from <b>${spot.k}</b> risk (${fmt(spot.avgR)}R a trade over ${spot.n}).`);
+      }
+    } else {
+      bits.push(`<br><span class="pos">In line with your best band (${spot.k}, ${fmt(spot.avgR)}R a trade).</span>`);
+    }
+  } else if(mine.filter(t=>+t.riskPct>0).length){
+    bits.push('<br>Not enough sized trades yet to tell you your best risk level.');
+  }
+
+  // Sizing frozen at an old account size is the quiet one nobody notices.
+  const recent = mine.slice(-10).filter(t=>+t.riskPct>0);
+  if(recent.length >= 3){
+    const avg = recent.reduce((a,t)=>a+ +t.riskPct,0)/recent.length;
+    if(avg < MYRISK*0.7){
+      bits.push(`<br>Your last ${recent.length} trades averaged <b>${fmt(avg,2)}%</b> against a `
+        + `${fmt(MYRISK,2)}% plan &mdash; your size has not kept up with your equity.`);
+    }
+  }
+  return bits.join('');
+}
+
 function renderCalc(){
   const name=$('instr').value, sp=specOf(name), ccy=$('ccy').value||MYCCY;
   const entry=+$('entry').value, sl=+$('sl').value, tp=$('tp').value===''?null:+$('tp').value;
@@ -751,7 +876,8 @@ function renderCalc(){
     const over=actualPct!=null && actualPct > pct*1.1;
     note.innerHTML = `You entered <b>${fmt(typed,2)}</b> lots = <b class="${over?'neg':''}">${m(actual)}</b>`
       + (actualPct!=null?` (<b class="${over?'neg':''}">${fmt(actualPct,2)}%</b> of equity)`:'')
-      + (over?' &mdash; over your plan.':'');
+      + (over?' &mdash; over your plan.':'')
+      + riskVerdict(actualPct);
   } else {
     note.innerHTML = lots>0
       ? `Type <b>${fmt(lots,2)}</b> in the lot size box, or your own number to check it.`
@@ -759,18 +885,65 @@ function renderCalc(){
   }
 }
 
-/** Keeps the risk amount in step with the lot size the trader typed. */
-function syncRiskFromLots(){
-  const sp=specOf($('instr').value), lots=+$('lots').value;
-  const entry=+$('entry').value, sl=+$('sl').value;
-  const r = ($('entry').value && $('sl').value) ? riskOfPosition(entry,sl,lots,sp) : null;
-  if(r!=null){ $('risk').value=r; $('risk').readOnly=true; $('lotsHint').textContent='Risk worked out from this size'; }
-  else { $('risk').readOnly=false; $('lotsHint').textContent = hasSpec(sp) ? 'Fill entry and initial SL' : "Set this instrument's pip value in My Setup"; }
+/**
+ * Lot size and risk amount are two views of the same decision, so whichever
+ * the trader typed last drives the other. Sizing by money ("I'll risk 200")
+ * is how most people actually think, and it was previously impossible.
+ */
+function recalcSize(){
+  const sp=specOf($('instr').value), entry=+$('entry').value, sl=+$('sl').value;
+  const priced = $('entry').value!=='' && $('sl').value!=='' && entry!==sl && hasSpec(sp);
+
+  if(priced){
+    if(SIZE_SRC==='risk' && $('risk').value!==''){
+      const lots = lotsForRisk(entry, sl, +$('risk').value, sp);
+      $('lots').value = lots>0 ? lots : '';
+      $('lotsHint').textContent = lots>0
+        ? 'Sized from your risk amount'
+        : 'Even the smallest lot risks more than that';
+      $('riskHint').textContent = 'You set this';
+    } else if($('lots').value!==''){
+      const r = riskOfPosition(entry, sl, +$('lots').value, sp);
+      if(r!=null) $('risk').value = r;
+      $('lotsHint').textContent = 'You set this';
+      $('riskHint').textContent = 'Worked out from your lot size';
+    } else {
+      $('lotsHint').textContent='Type either this or the risk amount';
+      $('riskHint').textContent='Type a risk and the lot size follows';
+    }
+  } else {
+    $('lotsHint').textContent = hasSpec(sp) ? 'Fill entry and initial SL' : "Set this instrument's pip value in My Setup";
+    $('riskHint').textContent = 'Type a risk and the lot size follows';
+  }
+  renderPipStrip();
   preview();
 }
-['lots','calcPct'].forEach(id=>$(id).addEventListener('input',()=>{ syncRiskFromLots(); renderCalc(); }));
-['entry','sl','tp','instr','ccy'].forEach(id=>$(id).addEventListener('input',()=>{ syncRiskFromLots(); renderCalc(); }));
-$('instr').addEventListener('change',()=>{ syncRiskFromLots(); renderCalc(); });
+$('lots').addEventListener('input',()=>{ SIZE_SRC='lots'; recalcSize(); renderCalc(); });
+$('risk').addEventListener('input',()=>{ SIZE_SRC='risk'; recalcSize(); renderCalc(); });
+['calcPct','entry','sl','tp','ccy'].forEach(id=>$(id).addEventListener('input',()=>{ recalcSize(); renderCalc(); }));
+$('instr').addEventListener('change',()=>{ recalcSize(); renderCalc(); });
+
+/** The numbers a trader checks before clicking, kept at the top of the form. */
+function renderPipStrip(){
+  const sp=specOf($('instr').value), entry=+$('entry').value, sl=+$('sl').value;
+  const tp=$('tp').value===''?null:+$('tp').value, lots=+$('lots').value, risk=+$('risk').value;
+  const ccy=$('ccy').value||MYCCY, equity=equityIn(ccy);
+  const px = $('entry').value!=='' && $('sl').value!=='' && entry!==sl;
+  const unit = hasSpec(sp) ? sp.pipSize : null;
+
+  const stopPips = px && unit ? Math.abs(entry-sl)/unit : null;
+  const tpPips   = px && unit && tp!==null ? Math.abs(tp-entry)/unit : null;
+  $('pipSl').textContent = stopPips==null ? '–' : fmt(stopPips,1)+' pips';
+  $('pipTp').textContent = tpPips==null ? '–' : fmt(tpPips,1)+' pips';
+  $('pipRr').textContent = (stopPips&&tpPips) ? '1:'+fmt(tpPips/stopPips) : '–';
+  $('pipLots').textContent = lots>0 ? fmt(lots,2) : '–';
+  $('pipRisk').textContent = risk>0 ? fmt(risk)+' '+esc(ccy) : '–';
+
+  const pct = (risk>0 && equity>0) ? risk/equity*100 : null;
+  const over = pct!=null && pct > MYRISK*1.1;
+  $('pipPct').textContent = pct==null ? '–' : fmt(pct,2)+'%';
+  $('pipPct').classList.toggle('over', !!over);
+}
 
 function updateQuality(){
   const o=calcLive(); const cur=$('quality').value;
@@ -782,7 +955,7 @@ function updateQuality(){
 }
 
 $('add').onclick = () => {
-  const t={date:$('date').value,time:$('ttime').value,closeTime:$('xtime').value,closeDate:$('xdate').value,timezone:$('tz').value,currency:$('ccy').value,session:$('sess').value,instrument:$('instr').value,strategy:$('strat').value,direction:$('dir').value,
+  const t={broker:brokerOf(),date:$('date').value,time:$('ttime').value,closeTime:$('xtime').value,closeDate:$('xdate').value,timezone:$('tz').value,currency:$('ccy').value,session:$('sess').value,instrument:$('instr').value,strategy:$('strat').value,direction:$('dir').value,
     entry:$('entry').value,sl:$('sl').value,finalSl:$('fsl').value,tp:$('tp').value,exit:$('exit').value,
     risk:$('risk').value,lots:$('lots').value,confidence:$('conf').value,mistakes:PICKED,emotion:$('emotion').value,rulesFollowed:checkedRules(),exitReason:$('xreason').value,shots:SHOTS,quality:$('quality').value,notes:$('notes').value};
   $('add').disabled=true; $('msg').textContent=SHOTS.length?'Uploading screenshots…':'Saving…';
@@ -811,21 +984,22 @@ function startEdit(id){
   $('xtime').value = t.closedUtc ? fmtIn(t.closedUtc,t.timezone||'UTC',false) : '';
   $('xdate').value = t.closedUtc && t.closedUtc.slice(0,10)!==t.date ? t.closedUtc.slice(0,10) : '';
   fillTz(); $('tz').value=t.timezone||MYTZ; $('sess').value=t.session||'';
+  fillBrokers(); $('brokerSel').value = t.broker || '';
   fillForm({instr:t.instrument, strat:t.strategy});
-  $('dir').value=t.direction;
-  ['entry','sl','tp','exit','risk','lots'].forEach(k=>{});
+  setDir(t.direction);
   $('entry').value=t.entry; $('sl').value=t.sl; $('fsl').value=t.trailed==='Yes'?t.finalSl:'';
   $('tp').value=t.tp===''?'':t.tp; $('exit').value=t.exit; $('risk').value=t.risk===''?'':t.risk;
   $('lots').value=t.lots===''?'':t.lots; $('ccy').value=t.currency||MYCCY;
   fillExitReason(); $('xreason').value = EXITS.includes(t.exitReason) ? t.exitReason : '';
   setConf(String(t.confidence||''));
+  SIZE_SRC='lots';
   PICKED = (t.mistakes||[]).filter(m=>MISTAKES.includes(m)); renderMistakes();
   fillEmotions(); $('emotion').value = EMOTIONS.includes(t.emotion) ? t.emotion : '';
   renderRules(t.rulesFollowed||[]);
   $('notes').value=t.notes||'';
   SHOTS=[]; renderThumbs();
   $('msg').textContent='Screenshots stay as they are.';
-  preview(); tzPreview(); syncRiskFromLots(); renderCalc(); updateQuality(); $('quality').value=t.quality;
+  preview(); tzPreview(); recalcSize(); renderCalc(); updateQuality(); $('quality').value=t.quality;
   showTab('journal'); window.scrollTo({top:0,behavior:'smooth'});
 }
 function endEdit(){
@@ -838,8 +1012,9 @@ function endEdit(){
   ['entry','sl','fsl','tp','exit','risk','lots','notes'].forEach(i=>$(i).value='');
   $('quality').value=''; $('ttime').value=''; $('xtime').value=''; $('xdate').value='';
   $('xreason').value=''; $('emotion').value=''; $('sess').value='';
+  SIZE_SRC='lots'; setDir('Long');
   PICKED=[]; renderMistakes(); renderRules(); setConf(''); SHOTS=[]; renderThumbs();
-  $('msg').textContent=''; preview(); tzPreview(); syncRiskFromLots(); renderCalc();
+  $('msg').textContent=''; preview(); tzPreview(); recalcSize(); renderCalc();
 }
 $('cancelEdit').onclick = endEdit;
 $('strat').addEventListener('change', updateRuleHint);
@@ -947,7 +1122,7 @@ function render(){
   group('byTrail',list,t=>t.trailed==='Yes'?'Trailed SL':'Fixed SL','Type');
   group('byExit',list,exitOf,'How it ended');
   group('byEmotion',list,t=>t.emotion||'Not recorded','Feeling',true);
-  mistakeTable(list); ruleTable(list);
+  mistakeTable(list); ruleTable(list); riskTable(list);
   leaderboard(); tradesTable(list);
 }
 
@@ -1066,6 +1241,27 @@ function ruleTable(list){
           + `<td class="${cls(r.keptR)}">${fmt(r.keptR)}</td><td class="${cls(r.brokeR)}">${fmt(r.brokeR)}</td>`
           + `<td class="diff ${cls(d)}">${d==null?'–':(d>0?'+':'')+fmt(d)+'R'}</td></tr>`;
       }).join('') + '</table>';
+}
+
+/** Results by how much was risked, with the best band called out. */
+function riskTable(list){
+  const bands = riskBands(list);
+  if(!bands.length){
+    $('byRisk').innerHTML = '<span style="color:var(--mut)">No sized trades yet. '
+      + 'Log lot sizes and this shows which risk level actually works for you.</span>';
+    return;
+  }
+  const spot = sweetSpot(list);
+  $('byRisk').innerHTML = '<table><tr><th>Risk taken</th><th>Trades</th><th>Win %</th><th>Avg R</th><th>Total R</th><th>Avg risk</th></tr>'
+    + bands.map(b=>{
+        const best = spot && b.k===spot.k;
+        return `<tr${best?' class="mrow sel"':''}><td>${esc(b.k)}${best?' <span class="tag">best</span>':''}</td>`
+          + `<td>${b.n}${b.n<MIN_BAND_SAMPLE?' <span class="hint">(thin)</span>':''}</td>`
+          + `<td>${b.winRate==null?'–':fmt(b.winRate,0)+'%'}</td>`
+          + `<td class="${cls(b.avgR)}">${fmt(b.avgR)}</td><td class="${cls(b.totalR)}">${fmt(b.totalR)}</td>`
+          + `<td>${fmt(b.avgRiskPct,2)}%</td></tr>`;
+      }).join('') + '</table>'
+    + `<div class="hint" style="margin-top:8px">A band needs ${MIN_BAND_SAMPLE} trades before it counts as signal rather than noise.</div>`;
 }
 
 function leaderboard(){

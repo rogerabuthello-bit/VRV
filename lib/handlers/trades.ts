@@ -48,7 +48,7 @@ function closedAt(t: Record<string, unknown>, openDate: string, opened: Date, of
 /** Columns added by later migrations; a database missing one still works. */
 const OPTIONAL_COLUMNS = [
   'closed_utc', 'exit_reason', 'lots', 'risk_pct', 'mistakes', 'emotion',
-  'rules_followed', 'rules_total',
+  'rules_followed', 'rules_total', 'broker',
 ];
 
 /**
@@ -92,12 +92,22 @@ async function buildTradeRow(
   const strategy = String(t.strategy || '').trim();
   if (!strategy) throw new AppError('Pick a strategy.');
 
+  // The pip value belongs to the broker, so the spec is looked up per broker.
+  const broker = String(
+    t.broker ?? (who.profile as unknown as { active_broker?: string }).active_broker ?? '',
+  ).trim().slice(0, 60);
+
   const [{ data: haveInstr }, { data: haveStrat }] = await Promise.all([
     supabase.from('instruments').select('id, pip_size, value_per_pip')
-      .eq('user_id', who.id).eq('name', instrument).maybeSingle(),
+      .eq('user_id', who.id).eq('name', instrument).eq('broker', broker).maybeSingle(),
     supabase.from('strategies').select('name, rules').eq('user_id', who.id).eq('name', strategy).maybeSingle(),
   ]);
-  if (!haveInstr) throw new AppError(`Add "${instrument}" in My Setup first.`);
+  if (!haveInstr) {
+    throw new AppError(
+      `Add "${instrument}" in My Setup first`
+      + (broker ? ` (under the broker "${broker}")` : '') + '.',
+    );
+  }
   if (!haveStrat) throw new AppError(`Add the strategy "${strategy}" in My Setup first.`);
 
   const entry = num(t.entry);
@@ -236,6 +246,7 @@ async function buildTradeRow(
       emotion,
       rules_followed: rulesFollowed,
       rules_total: stratRules.length,
+      broker,
       session,
       currency,
   };
@@ -251,6 +262,7 @@ async function buildTradeRow(
     risk: risk || '',
     lots: lots ?? '',
     riskPct: riskPct ?? '',
+    broker,
     mistakes,
     emotion: emotion ?? '',
     heldMinutes: closed ? Math.round((closed.getTime() - opened.getTime()) / 60000) : '',

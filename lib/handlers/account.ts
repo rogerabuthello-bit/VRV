@@ -14,7 +14,7 @@ interface TradeRow {
   result_r: number; pnl: number | null; outcome: string; quality: string; notes: string;
   confidence: number; screenshots: string[]; timezone: string; opened_utc: string;
   session: string; currency: string; closed_utc: string | null; exit_reason: string | null;
-  lots: number | null; risk_pct: number | null;
+  lots: number | null; risk_pct: number | null; broker: string | null;
   mistakes: string[] | null; emotion: string | null;
   rules_followed: string[] | null; rules_total: number | null;
   trader: { username: string } | null;
@@ -44,11 +44,11 @@ export async function getBootstrap(bearer: string | undefined) {
     fetchAll<TradeRow>(() =>
       supabase.from('trades').select('*, trader:users!inner(username)').order('trade_date', { ascending: true })),
     fetchAll<{
-      name: string; pip_size: number | null; value_per_pip: number | null;
+      name: string; broker: string | null; pip_size: number | null; value_per_pip: number | null;
       lot_step: number | null; trader: { username: string } | null;
     }>(() => supabase
       .from('instruments')
-      .select('name, pip_size, value_per_pip, lot_step, trader:users!inner(username)')),
+      .select('name, broker, pip_size, value_per_pip, lot_step, trader:users!inner(username)')),
     fetchAll<{
       name: string; description: string; rules: string[] | null;
       trader: { username: string } | null;
@@ -67,6 +67,7 @@ export async function getBootstrap(bearer: string | undefined) {
     tz: me.timezone || '',
     ccy: me.currency || '',
     riskPct: (me as unknown as { default_risk_pct?: number }).default_risk_pct ?? 1,
+    broker: (me as unknown as { active_broker?: string }).active_broker || '',
     members: memberRows.map((r) => r.username).filter(Boolean).sort(),
     funds: fundRows.map((f) => ({
       id: f.id,
@@ -79,6 +80,7 @@ export async function getBootstrap(bearer: string | undefined) {
     instruments: instrRows.map((r) => ({
       trader: r.trader?.username || '',
       name: r.name,
+      broker: r.broker || '',
       pipSize: r.pip_size,
       valuePerPip: r.value_per_pip,
       lotStep: r.lot_step || 0.01,
@@ -116,6 +118,7 @@ export async function getBootstrap(bearer: string | undefined) {
       exitReason: t.exit_reason || '',
       lots: orBlank(t.lots),
       riskPct: orBlank(t.risk_pct),
+      broker: t.broker || '',
       mistakes: t.mistakes || [],
       emotion: t.emotion || '',
       rulesFollowed: t.rules_followed || [],
@@ -259,6 +262,20 @@ export async function saveRiskPct(bearer: string | undefined, raw: unknown) {
     throw new AppError(error.message, 500);
   }
   return pct;
+}
+
+/** Which broker's settings the journal is working with right now. */
+export async function saveBroker(bearer: string | undefined, raw: unknown) {
+  const who = await requireProfile(bearer);
+  const broker = String(raw || '').trim().slice(0, 60);
+  const { error } = await db().from('users').update({ active_broker: broker }).eq('id', who.id);
+  if (error) {
+    if (/active_broker/.test(error.message)) {
+      throw new AppError('Run migration 0006 in Supabase to use brokers.');
+    }
+    throw new AppError(error.message, 500);
+  }
+  return broker;
 }
 
 /** Lets a member rename their own handle. */
