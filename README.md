@@ -77,6 +77,23 @@ In the [Google Cloud console](https://console.cloud.google.com/apis/credentials)
 3. Deploy, then go back to Supabase and make sure the deployed URL is the
    *Site URL* / a *Redirect URL*.
 
+### Stuck? Open `/api/health`
+
+Visit `https://your-app.vercel.app/api/health`. It checks every environment
+variable, whether the Supabase project is awake, whether the schema was
+migrated, whether the Google provider is on, and whether the owner account has
+been claimed — and lists what to fix. It returns booleans and counts only, never
+a key or any user data.
+
+Two things it cannot see, which break sign-in most often:
+
+- **Vercel Authentication must be OFF** (Vercel → Settings → Deployment
+  Protection). While it is on, every `*.vercel.app` URL sits behind a Vercel
+  login wall, and the Google redirect coming back from Supabase is intercepted
+  before the page can read the `?code=` it needs.
+- **Supabase Site URL / Redirect URLs must list your stable domain** — the one
+  that does not change per deployment.
+
 ### 3. Claim the owner account
 
 1. Open the site, click **Continue with Google**, sign in with your Gmail.

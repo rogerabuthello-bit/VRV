@@ -1,0 +1,182 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+
+/**
+ * GET /api/health - setup checker.
+ *
+ * "It doesn't work" is almost always one of: a missing environment variable,
+ * a Supabase project that is paused, a schema that was never migrated, or a
+ * Google provider that was never switched on. This reports all of them at
+ * once.
+ *
+ * It deliberately returns only booleans, counts and the project ref. No keys,
+ * no user data. The project ref and anon key are already public by design -
+ * /api/rpc serves them to the browser so it can talk to Supabase.
+ */
+
+type Check = { ok: boolean; detail: string };
+
+const ok = (detail: string): Check => ({ ok: true, detail });
+const bad = (detail: string): Check => ({ ok: false, detail });
+
+async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([p, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  res.setHeader('Cache-Control', 'no-store');
+
+  const url = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
+  const anon = process.env.SUPABASE_ANON_KEY || '';
+  const service = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  const superadmin = (process.env.SUPERADMIN_USERNAME || 'ROGERB').trim();
+  const bootstrap = (process.env.BOOTSTRAP_INVITE_CODE || '').trim();
+  const bucket = process.env.SUPABASE_SCREENSHOT_BUCKET || 'screenshots';
+
+  const checks: Record<string, Check> = {};
+  const next: string[] = [];
+
+  /* ---------------------------------------------------------- environment */
+  checks.SUPABASE_URL = url
+    ? ok(url)
+    : bad('missing - add it in Vercel > Settings > Environment Variables');
+  checks.SUPABASE_ANON_KEY = anon
+    ? ok(`set (${anon.length} chars)`)
+    : bad('missing - the page cannot start Supabase without it');
+  checks.SUPABASE_SERVICE_ROLE_KEY = service
+    ? ok(`set (${service.length} chars)`)
+    : bad('missing - every signed-in request will fail');
+  checks.SUPERADMIN_USERNAME = ok(superadmin);
+  checks.BOOTSTRAP_INVITE_CODE = bootstrap
+    ? ok('set - the owner account can still be claimed')
+    : bad('not set - fine once ROGERB exists, required before that');
+
+  const ref = /^https:\/\/([a-z0-9]+)\.supabase\.co$/i.exec(url)?.[1] || '';
+  checks.supabaseProjectRef = ref
+    ? ok(ref)
+    : bad(url ? 'SUPABASE_URL is not a https://<ref>.supabase.co address' : 'unknown');
+
+  /* ------------------------------------------------- is the project awake */
+  let awake = false;
+  if (url && anon) {
+    try {
+      const r = await withTimeout(
+        fetch(`${url}/auth/v1/settings`, { headers: { apikey: anon } }),
+        8000,
+      );
+      if (r.ok) {
+        awake = true;
+        const settings = (await r.json()) as {
+          external?: Record<string, boolean>;
+          disable_signup?: boolean;
+        };
+        const providers = settings.external || {};
+        checks.supabaseReachable = ok('project is awake and answering');
+        checks.googleSignIn = providers.google
+          ? ok('enabled')
+          : bad('DISABLED - turn on Authentication > Providers > Google in Supabase');
+        checks.emailSignIn = providers.email
+          ? ok('enabled')
+          : bad('disabled - only Google sign-in will work');
+        checks.signupsAllowed = settings.disable_signup
+          ? bad('signups are disabled in Supabase, so nobody new can be created')
+          : ok('allowed');
+      } else {
+        checks.supabaseReachable = bad(`auth endpoint returned HTTP ${r.status}`);
+      }
+    } catch (e) {
+      checks.supabaseReachable = bad(
+        `cannot reach the project (${(e as Error).message}) - it is probably PAUSED. `
+        + 'Open the Supabase dashboard and restore it.',
+      );
+    }
+  } else {
+    checks.supabaseReachable = bad('skipped - URL or anon key missing');
+  }
+
+  /* --------------------------------------------------- schema and storage */
+  if (awake && service) {
+    const rest = async (path: string) => withTimeout(
+      fetch(`${url}/rest/v1/${path}`, {
+        headers: { apikey: service, Authorization: `Bearer ${service}`, Prefer: 'count=exact' },
+      }),
+      8000,
+    );
+
+    try {
+      const r = await rest('users?select=id&limit=1');
+      if (r.status === 404 || r.status === 400) {
+        checks.schema = bad('tables are missing - run supabase/migrations/0001_init.sql in the SQL editor');
+      } else if (!r.ok) {
+        checks.schema = bad(`users table returned HTTP ${r.status} (is the service_role key correct?)`);
+      } else {
+        checks.schema = ok('tables exist');
+        const range = r.headers.get('content-range') || '';
+        const total = Number(range.split('/')[1]);
+        checks.members = ok(Number.isFinite(total) ? `${total} account(s)` : 'unknown');
+
+        const sa = await rest('users?select=username&role=eq.superadmin&limit=1');
+        if (sa.ok) {
+          const rows = (await sa.json()) as { username: string }[];
+          checks.superadminClaimed = rows.length
+            ? ok(`${rows[0].username} owns this journal`)
+            : bad(`not claimed yet - sign in and enter "${superadmin}" with the bootstrap code`);
+        }
+      }
+    } catch (e) {
+      checks.schema = bad(`could not check (${(e as Error).message})`);
+    }
+
+    try {
+      const r = await withTimeout(
+        fetch(`${url}/storage/v1/bucket/${bucket}`, {
+          headers: { apikey: service, Authorization: `Bearer ${service}` },
+        }),
+        8000,
+      );
+      checks.screenshotBucket = r.ok
+        ? ok(`"${bucket}" exists`)
+        : bad(`"${bucket}" missing (HTTP ${r.status}) - the migration creates it`);
+    } catch (e) {
+      checks.screenshotBucket = bad(`could not check (${(e as Error).message})`);
+    }
+  } else {
+    checks.schema = bad('skipped - project unreachable or service key missing');
+  }
+
+  /* ----------------------------------------------------- redirect targets */
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '');
+  const origin = host ? `https://${host}` : '';
+  checks.thisOrigin = ok(origin || 'unknown');
+
+  for (const [name, c] of Object.entries(checks)) {
+    if (!c.ok) next.push(`${name}: ${c.detail}`);
+  }
+
+  if (origin) {
+    next.push(
+      'In Supabase > Authentication > URL Configuration, Site URL and Redirect URLs '
+      + `must include ${origin} (use your stable domain, not a per-deployment URL).`,
+    );
+    next.push(
+      'In Vercel > Settings > Deployment Protection, Vercel Authentication must be OFF, '
+      + 'or the Google redirect back from Supabase is intercepted by the Vercel login wall.',
+    );
+  }
+
+  const healthy = Object.values(checks).every((c) => c.ok);
+  res.status(200).json({
+    ok: healthy,
+    summary: healthy ? 'All checks passed.' : 'Setup is incomplete - see failing below.',
+    failing: Object.entries(checks).filter(([, c]) => !c.ok).map(([k]) => k),
+    checks,
+    next,
+  });
+}
