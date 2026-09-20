@@ -528,6 +528,7 @@
       <div class="field"><label for="fsl">Final SL (if trailed)</label><input type="number" step="any" id="fsl" inputmode="decimal"><div class="hint">Leave blank if not moved</div></div>
       <div class="field"><label for="tp">Initial TP (planned)</label><input type="number" step="any" id="tp" inputmode="decimal"></div>
       <div class="field"><label for="exit">Exit price</label><input type="number" step="any" id="exit" inputmode="decimal"><div class="hint">Where you actually closed &mdash; target, stop, trail or manual</div></div>
+      <div class="field"><label for="xreason">How it ended</label><select id="xreason"></select><div class="hint" id="xreasonHint">Worked out from your prices</div></div>
       <div class="field"><label for="risk">Risk amount (optional)</label><input type="number" step="any" id="risk" inputmode="decimal"></div>
       <div class="field"><label for="ccy">Currency</label><select id="ccy"></select><div class="hint">Your base currency by default</div></div>
       <div class="field field-wide">
@@ -578,6 +579,7 @@
       <div class="field"><label for="fQual">Quality</label><select id="fQual"><option value="">All</option><option>Good Win</option><option>Bad Win</option><option>Good Loss</option><option>Bad Loss</option></select></div>
       <div class="field"><label for="fConf">Confidence</label><select id="fConf"><option value="">All</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="0">Not rated</option></select></div>
       <div class="field"><label for="fSess">Session</label><select id="fSess"><option value="">All</option><option>Asia</option><option>London</option><option>London/NY</option><option>New York</option><option>Off-hours</option><option value="__none">Not set</option></select></div>
+      <div class="field"><label for="fExit">How it ended</label><select id="fExit"><option value="">All</option><option>Target hit</option><option>Ran past target</option><option>Trailed stop hit</option><option>Stopped out</option><option>Manual close</option></select></div>
       <div class="field"><label for="fTrail">SL trailed</label><select id="fTrail"><option value="">All</option><option>Yes</option><option>No</option></select></div>
       <div class="filters-actions">
         <button class="ghost" id="reset">Reset</button>
@@ -627,6 +629,7 @@
     <div class="card"><h2>By session (UTC-based)</h2><div class="scroll" id="bySess"></div></div>
     <div class="card"><h2>By confidence level</h2><div class="scroll" id="byConf"></div></div>
     <div class="card"><h2>Trailed vs not trailed</h2><div class="scroll" id="byTrail"></div></div>
+    <div class="card"><h2>How trades ended</h2><div class="scroll" id="byExit"></div></div>
   </div>
 
   <section class="card"><h2>Strategy playbook</h2><div id="playbook"></div></section>

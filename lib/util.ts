@@ -7,6 +7,41 @@ export const CURRENCIES = [
   'SAR', 'ZAR', 'NGN', 'KES', 'PKR', 'BDT', 'MXN', 'BRL', 'SEK', 'NOK', 'DKK', 'PLN', 'TRY', 'USDT',
 ] as const;
 
+export const EXIT_REASONS = [
+  'Target hit', 'Ran past target', 'Trailed stop hit', 'Stopped out', 'Manual close',
+] as const;
+
+/** Anything within 5% of the risk distance counts as "landed on" that level. */
+const EXIT_TOLERANCE_R = 0.05;
+
+/**
+ * Works out how a trade ended from its prices alone, so the common case needs
+ * no extra typing. Every distance is measured in R against the initial stop,
+ * which makes it scale-free: it reads EURUSD and BTC the same way, and it
+ * handles shorts without a special case because the risk distance is negative
+ * for them.
+ */
+export function detectExitReason(o: {
+  entry: number; sl: number; finalSl: number; tp: number | null; exit: number;
+}): string {
+  const risk = o.entry - o.sl;
+  if (!risk) return 'Manual close';
+  const r = (v: number) => (v - o.entry) / risk;
+  const rExit = r(o.exit);
+
+  if (o.tp !== null && Number.isFinite(o.tp)) {
+    const rTp = r(o.tp);
+    if (rExit >= rTp - EXIT_TOLERANCE_R) {
+      return rExit > rTp + EXIT_TOLERANCE_R ? 'Ran past target' : 'Target hit';
+    }
+  }
+  if (o.finalSl !== o.sl && Math.abs(rExit - r(o.finalSl)) <= EXIT_TOLERANCE_R) {
+    return 'Trailed stop hit';
+  }
+  if (Math.abs(rExit + 1) <= EXIT_TOLERANCE_R) return 'Stopped out';
+  return 'Manual close';
+}
+
 export const MAX_SHOTS = 4;
 export const MAX_SHOT_BYTES = 4 * 1024 * 1024;
 

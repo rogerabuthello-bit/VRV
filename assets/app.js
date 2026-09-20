@@ -1,6 +1,28 @@
 let ALL = [], INSTR = [], STRATS = [];
 
 const QUALS = ['Good Win','Bad Win','Good Loss','Bad Loss'];
+const EXITS = ['Target hit','Ran past target','Trailed stop hit','Stopped out','Manual close'];
+const EXIT_TOL_R = 0.05;
+// Must stay in step with detectExitReason() in lib/util.ts.
+function detectExit(o){
+  const risk = o.entry - o.sl;
+  if(!risk || isNaN(risk)) return 'Manual close';
+  const r = v => (v - o.entry) / risk, rExit = r(o.exit);
+  if(o.tp!=null && o.tp!=='' && isFinite(o.tp)){
+    const rTp = r(+o.tp);
+    if(rExit >= rTp - EXIT_TOL_R) return rExit > rTp + EXIT_TOL_R ? 'Ran past target' : 'Target hit';
+  }
+  if(+o.finalSl !== +o.sl && Math.abs(rExit - r(+o.finalSl)) <= EXIT_TOL_R) return 'Trailed stop hit';
+  if(Math.abs(rExit + 1) <= EXIT_TOL_R) return 'Stopped out';
+  return 'Manual close';
+}
+/** Stored reason, or one derived on the fly for trades logged before this existed. */
+function exitOf(t){
+  if(t.exitReason) return t.exitReason;
+  const e=+t.entry, sl=+t.sl, x=+t.exit;
+  if([e,sl,x].some(v=>isNaN(v))) return 'Manual close';
+  return detectExit({entry:e, sl:sl, finalSl:t.finalSl===''?sl:+t.finalSl, tp:t.tp===''?null:+t.tp, exit:x});
+}
 const $ = id => document.getElementById(id);
 const fmt = (n, d=2) => (n===null||n===undefined||n===''||isNaN(n)) ? '–' : Number(n).toFixed(d);
 const cls = n => n>0?'pos':(n<0?'neg':'');
@@ -217,8 +239,8 @@ const CCOL=['','#ef4444','#f97316','#facc15','#84cc16','#22c55e'];
 const miniBar=v=>{v=+v||0; if(!v) return '–'; return '<span class="cmini" title="'+v+'/5">'+[1,2,3,4,5].map(i=>`<i style="${i<=v?'background:'+CCOL[v]:''}"></i>`).join('')+'</span>';};
 $('date').value = new Date().toLocaleDateString('en-CA');
 $('trendBy').addEventListener('change',render);
-['fTrader','fFrom','fTo','fInstr','fStrat','fQual','fTrail','fConf','fSess'].forEach(id => $(id).addEventListener('change', render));
-$('reset').onclick = () => { ['fFrom','fTo','fInstr','fStrat','fQual','fTrail','fConf','fSess'].forEach(i=>$(i).value=''); $('fTrader').value='__ALL__'; render(); };
+['fTrader','fFrom','fTo','fInstr','fStrat','fQual','fTrail','fConf','fSess','fExit'].forEach(id => $(id).addEventListener('change', render));
+$('reset').onclick = () => { ['fFrom','fTo','fInstr','fStrat','fQual','fTrail','fConf','fSess','fExit'].forEach(i=>$(i).value=''); $('fTrader').value='__ALL__'; render(); };
 $('refresh').onclick = () => load().catch(fail);
 ['entry','sl','fsl','tp','exit','risk','dir'].forEach(id => $(id).addEventListener('input', preview));
 
@@ -234,7 +256,7 @@ function load(){
     ALL=d.trades; FUNDS=d.funds||[]; INSTR=d.instruments; STRATS=d.strategies; MEMBERS=d.members||[];
     fillForm(); fillFilters();
     if(!SCOPE_TOUCHED){ $('fTrader').value = ALL.some(t=>t.trader===ME) ? ME : '__ALL__'; }
-    fillTz(); fillCcy(); render(); renderSetup();
+    fillTz(); fillCcy(); fillExitReason(); render(); renderSetup();
     if(wasLocked) showTab('dash');
   });
 }
@@ -549,8 +571,25 @@ function preview(){
   const f=$('fsl').value, s=$('sl').value;
   if(f!=='' && +f!==+s) out.push('SL trailed');
   $('preview').textContent=out.join('  •  ');
-  updateQuality();
+  updateQuality(); updateExitHint();
 }
+function fillExitReason(){
+  const cur = $('xreason').value;
+  $('xreason').innerHTML = '<option value="">Auto (from prices)</option>'
+    + EXITS.map(v=>`<option>${v}</option>`).join('');
+  if(EXITS.includes(cur)) $('xreason').value = cur;
+}
+function updateExitHint(){
+  const e=$('entry').value, sl=$('sl').value, x=$('exit').value;
+  if(e===''||sl===''||x===''){ $('xreasonHint').textContent='Fill entry, initial SL and exit'; return; }
+  const guess = detectExit({entry:+e, sl:+sl, finalSl:$('fsl').value===''?+sl:+$('fsl').value,
+                            tp:$('tp').value===''?null:+$('tp').value, exit:+x});
+  $('xreasonHint').textContent = $('xreason').value
+    ? 'You set this yourself · prices say ' + guess
+    : 'Worked out from your prices: ' + guess;
+}
+$('xreason').addEventListener('change', updateExitHint);
+
 function updateQuality(){
   const o=calcLive(); const cur=$('quality').value;
   let opts=QUALS;
@@ -563,11 +602,11 @@ function updateQuality(){
 $('add').onclick = () => {
   const t={date:$('date').value,time:$('ttime').value,closeTime:$('xtime').value,closeDate:$('xdate').value,timezone:$('tz').value,currency:$('ccy').value,session:$('sess').value,instrument:$('instr').value,strategy:$('strat').value,direction:$('dir').value,
     entry:$('entry').value,sl:$('sl').value,finalSl:$('fsl').value,tp:$('tp').value,exit:$('exit').value,
-    risk:$('risk').value,confidence:$('conf').value,shots:SHOTS,quality:$('quality').value,notes:$('notes').value};
+    risk:$('risk').value,confidence:$('conf').value,exitReason:$('xreason').value,shots:SHOTS,quality:$('quality').value,notes:$('notes').value};
   $('add').disabled=true; $('msg').textContent=SHOTS.length?'Uploading screenshots…':'Saving…';
   uploadShots(SHOTS).then(paths=>{ t.shots=paths; if(paths.length) $('msg').textContent='Saving trade…'; return api('addTrade',t); }).then(r=>{
     $('add').disabled=false; $('msg').textContent=`Saved: ${r.outcome} ${fmt(r.r)}R${r.trailed==='Yes'?' (trailed)':''} · ${r.session}`;
-    ['entry','sl','fsl','tp','exit','risk','notes'].forEach(i=>$(i).value=''); $('quality').value=''; $('ttime').value=''; $('xtime').value=''; $('xdate').value=''; $('sess').value=''; setConf(''); SHOTS=[]; renderThumbs(); preview(); tzPreview(); load().catch(fail);
+    ['entry','sl','fsl','tp','exit','risk','notes'].forEach(i=>$(i).value=''); $('quality').value=''; $('ttime').value=''; $('xtime').value=''; $('xdate').value=''; $('xreason').value=''; $('sess').value=''; setConf(''); SHOTS=[]; renderThumbs(); preview(); tzPreview(); load().catch(fail);
   }).catch(e=>{ $('add').disabled=false; const m=(e&&e.message)||String(e); if(/AUTH/.test(m)) return fail(e); $('msg').textContent='Error: '+m; });
 };
 function del(id){
@@ -582,7 +621,7 @@ function filtered(includeTrader=true){
     (!includeTrader||tr==='__ALL__'||t.trader===tr) &&
     (!v('fFrom')||t.date>=v('fFrom')) && (!v('fTo')||t.date<=v('fTo')) &&
     (!v('fInstr')||t.instrument===v('fInstr')) && (!v('fStrat')||t.strategy===v('fStrat')) &&
-    (!v('fQual')||t.quality===v('fQual')) && (!v('fSess')||(v('fSess')==='__none'?!t.session:t.session===v('fSess'))) && (v('fConf')===''||(+t.confidence||0)===+v('fConf')) && (!v('fTrail')||t.trailed===v('fTrail')))
+    (!v('fQual')||t.quality===v('fQual')) && (!v('fSess')||(v('fSess')==='__none'?!t.session:t.session===v('fSess'))) && (v('fConf')===''||(+t.confidence||0)===+v('fConf')) && (!v('fTrail')||t.trailed===v('fTrail')) && (!v('fExit')||exitOf(t)===v('fExit')))
     .sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:String(a.loggedAt).localeCompare(String(b.loggedAt)));
 }
 function calc(list){
@@ -665,6 +704,7 @@ function render(){
   group('bySess',list,t=>t.session||'Not set','Session',true);
   group('byConf',list,t=>CONF[+t.confidence]||'Not rated','Confidence',true);
   group('byTrail',list,t=>t.trailed==='Yes'?'Trailed SL':'Fixed SL','Type');
+  group('byExit',list,exitOf,'How it ended');
   leaderboard(); tradesTable(list);
 }
 
@@ -739,8 +779,8 @@ function leaderboard(){
 }
 function tradesTable(list){
   const me=$('me').value.trim().toLowerCase(), rows=[...list].reverse();
-  $('tbl').innerHTML=rows.length?`<table><tr><th>Date</th><th>Time (UTC)</th><th>Time (${esc(MYTZ)})</th><th>Closed (${esc(MYTZ)})</th><th>Held</th><th>Session</th><th>Trader</th><th>Instrument</th><th>Dir</th><th>Strategy</th><th>Entry</th><th>Init SL</th><th>Final SL</th><th>Init TP</th><th>Exit</th><th>Plan RR</th><th>R</th><th>PnL</th><th>Result</th><th>Quality</th><th>Conf</th><th>Shots</th><th>Notes</th><th></th></tr>`+
-    rows.map(t=>`<tr><td>${esc(t.date)}</td><td>${fmtIn(t.openedUtc,'UTC',false)}</td><td title="Trader's own time: ${esc(fmtIn(t.openedUtc,t.timezone||'UTC',false))} ${esc(t.timezone)}">${fmtIn(t.openedUtc,MYTZ,false)}</td><td>${t.closedUtc?fmtIn(t.closedUtc,MYTZ,false):'–'}</td><td>${fmtDur(holdMin(t))}</td><td>${esc(t.session)||'–'}</td><td>${esc(t.trader)}</td><td>${esc(t.instrument)}</td><td>${t.direction}</td><td>${esc(t.strategy)}</td><td>${t.entry}</td><td>${t.sl}</td><td>${t.trailed==='Yes'?t.finalSl+' ⤴':'–'}</td><td>${t.tp}</td><td>${t.exit}</td><td>${t.plannedRR===''?'–':'1:'+t.plannedRR}</td><td class="${cls(t.r)}">${fmt(t.r)}</td><td class="${cls(t.pnl)}">${t.pnl===''?'–':fmt(t.pnl)+' '+esc(t.currency||'')}</td><td><span class="pill ${t.outcome}">${t.outcome}</span></td><td><span class="pill ${key(t.quality)}">${esc(t.quality)}</span></td><td>${miniBar(t.confidence)}</td><td class="shot-cell">${(t.shots&&t.shots.length)?`<button type="button" class="ghost small" data-view="${esc(t.shots.join(','))}">&#128247; ${t.shots.length}</button>`:''}${(String(t.trader).toLowerCase()===me&&(!t.shots||t.shots.length<MAXSHOTS))?`<button type="button" class="ghost small" data-addshot="${t.id}" title="Add screenshot">+&#128247;</button>`:''}</td><td style="white-space:normal;max-width:220px">${esc(t.notes)}</td><td>${String(t.trader).toLowerCase()===me?`<button class="ghost small" onclick="del('${t.id}')">✕</button>`:''}</td></tr>`).join('')+'</table>'
+  $('tbl').innerHTML=rows.length?`<table><tr><th>Date</th><th>Time (UTC)</th><th>Time (${esc(MYTZ)})</th><th>Closed (${esc(MYTZ)})</th><th>Held</th><th>Session</th><th>Trader</th><th>Instrument</th><th>Dir</th><th>Strategy</th><th>Entry</th><th>Init SL</th><th>Final SL</th><th>Init TP</th><th>Exit</th><th>How it ended</th><th>Plan RR</th><th>R</th><th>PnL</th><th>Result</th><th>Quality</th><th>Conf</th><th>Shots</th><th>Notes</th><th></th></tr>`+
+    rows.map(t=>`<tr><td>${esc(t.date)}</td><td>${fmtIn(t.openedUtc,'UTC',false)}</td><td title="Trader's own time: ${esc(fmtIn(t.openedUtc,t.timezone||'UTC',false))} ${esc(t.timezone)}">${fmtIn(t.openedUtc,MYTZ,false)}</td><td>${t.closedUtc?fmtIn(t.closedUtc,MYTZ,false):'–'}</td><td>${fmtDur(holdMin(t))}</td><td>${esc(t.session)||'–'}</td><td>${esc(t.trader)}</td><td>${esc(t.instrument)}</td><td>${t.direction}</td><td>${esc(t.strategy)}</td><td>${t.entry}</td><td>${t.sl}</td><td>${t.trailed==='Yes'?t.finalSl+' ⤴':'–'}</td><td>${t.tp}</td><td>${t.exit}</td><td>${esc(exitOf(t))}</td><td>${t.plannedRR===''?'–':'1:'+t.plannedRR}</td><td class="${cls(t.r)}">${fmt(t.r)}</td><td class="${cls(t.pnl)}">${t.pnl===''?'–':fmt(t.pnl)+' '+esc(t.currency||'')}</td><td><span class="pill ${t.outcome}">${t.outcome}</span></td><td><span class="pill ${key(t.quality)}">${esc(t.quality)}</span></td><td>${miniBar(t.confidence)}</td><td class="shot-cell">${(t.shots&&t.shots.length)?`<button type="button" class="ghost small" data-view="${esc(t.shots.join(','))}">&#128247; ${t.shots.length}</button>`:''}${(String(t.trader).toLowerCase()===me&&(!t.shots||t.shots.length<MAXSHOTS))?`<button type="button" class="ghost small" data-addshot="${t.id}" title="Add screenshot">+&#128247;</button>`:''}</td><td style="white-space:normal;max-width:220px">${esc(t.notes)}</td><td>${String(t.trader).toLowerCase()===me?`<button class="ghost small" onclick="del('${t.id}')">✕</button>`:''}</td></tr>`).join('')+'</table>'
     :'<span style="color:var(--mut)">No trades yet – log your first one above.</span>';
 }
 const LINECOL=['#8b6cff','#22d3ee','#f5c542','#ff5f6d','#2fd27b','#f472b6','#fb923c','#60a5fa','#a3e635','#c084fc'];

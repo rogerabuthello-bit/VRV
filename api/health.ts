@@ -171,6 +171,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           : bad('migration 0002 not applied - run supabase/migrations/0002_trade_closed_at.sql. '
                 + 'Trades still save, just without a close time.');
 
+        const reason = await rest('trades?select=exit_reason&limit=1');
+        checks.tradeExitReason = reason.ok
+          ? ok('recorded')
+          : bad('migration 0003 not applied - run supabase/migrations/0003_exit_reason.sql.');
+
         const sa = await rest('users?select=username&role=eq.superadmin&limit=1');
         if (sa.ok) {
           const rows = (await sa.json()) as { username: string }[];

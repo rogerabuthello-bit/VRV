@@ -13,7 +13,7 @@ interface TradeRow {
   initial_tp: number | null; exit_price: number; risk: number | null; planned_rr: number | null;
   result_r: number; pnl: number | null; outcome: string; quality: string; notes: string;
   confidence: number; screenshots: string[]; timezone: string; opened_utc: string;
-  session: string; currency: string; closed_utc: string | null;
+  session: string; currency: string; closed_utc: string | null; exit_reason: string | null;
   trader: { username: string } | null;
 }
 
@@ -95,6 +95,7 @@ export async function getBootstrap(bearer: string | undefined) {
       timezone: t.timezone || '',
       openedUtc: isoOrEmpty(t.opened_utc),
       closedUtc: isoOrEmpty(t.closed_utc),
+      exitReason: t.exit_reason || '',
       session: t.session || '',
       currency: t.currency || '',
     })),

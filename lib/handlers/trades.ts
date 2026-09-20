@@ -4,7 +4,8 @@ import { requireProfile } from '../auth';
 import { check } from '../query';
 import { verifyUploaded, removeObjects, ownsPath } from './shots';
 import {
-  QUALITY, SESSIONS, MAX_SHOTS, num, round, validTz, validCcy, offsetMin, sessionOf, uuid, isIsoDate,
+  QUALITY, SESSIONS, MAX_SHOTS, EXIT_REASONS, detectExitReason,
+  num, round, validTz, validCcy, offsetMin, sessionOf, uuid, isIsoDate,
 } from '../util';
 
 const DAY = 86400000;
@@ -41,18 +42,26 @@ function closedAt(t: Record<string, unknown>, openDate: string, opened: Date, of
   return closed;
 }
 
+/** Columns added by later migrations; a database missing one still works. */
+const OPTIONAL_COLUMNS = ['closed_utc', 'exit_reason'];
+
 /**
- * Lets the app keep saving trades on a database where migration 0002 has not
- * been applied yet, instead of failing every save outright.
+ * Saves the trade, and if the database has not had a later migration applied
+ * it drops that column and retries rather than failing the save outright. The
+ * trader loses one field, not the trade.
  */
 async function insertTrade(supabase: ReturnType<typeof db>, row: Record<string, unknown>) {
-  const first = await supabase.from('trades').insert(row).select('id').single();
-  if (first.error && /closed_utc/.test(first.error.message)) {
-    const { closed_utc, ...legacy } = row;
-    void closed_utc;
-    return supabase.from('trades').insert(legacy).select('id').single();
+  const attempt = { ...row };
+  for (let i = 0; i <= OPTIONAL_COLUMNS.length; i += 1) {
+    const res = await supabase.from('trades').insert(attempt).select('id').single();
+    if (!res.error) return res;
+    const missing = OPTIONAL_COLUMNS.find(
+      (c) => c in attempt && res.error!.message.includes(c),
+    );
+    if (!missing) return res;
+    delete attempt[missing];
   }
-  return first;
+  return supabase.from('trades').insert(attempt).select('id').single();
 }
 
 /** Add a completed trade for the signed-in user. */
@@ -135,6 +144,12 @@ export async function addTrade(bearer: string | undefined, raw: unknown) {
     ? String(t.session)
     : sessionOf(opened);
 
+  // Derived from the prices unless the trader corrected it themselves.
+  const chosen = String(t.exitReason || '').trim();
+  const exitReason = (EXIT_REASONS as readonly string[]).includes(chosen)
+    ? chosen
+    : detectExitReason({ entry, sl, finalSl, tp, exit });
+
   const shots = Array.isArray(t.shots) ? t.shots.map(String).filter(Boolean) : [];
   const screenshots = await verifyUploaded(who.id, shots);
 
@@ -162,6 +177,7 @@ export async function addTrade(bearer: string | undefined, raw: unknown) {
       timezone,
       opened_utc: opened.toISOString(),
       closed_utc: closed ? closed.toISOString() : null,
+      exit_reason: exitReason,
       session,
       currency,
   });
@@ -178,6 +194,7 @@ export async function addTrade(bearer: string | undefined, raw: unknown) {
     outcome,
     trailed: slTrailed ? 'Yes' : 'No',
     session,
+    exitReason,
     heldMinutes: closed ? Math.round((closed.getTime() - opened.getTime()) / 60000) : '',
   };
 }
