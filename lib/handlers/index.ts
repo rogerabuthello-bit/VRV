@@ -34,6 +34,7 @@ export const handlers: Record<string, Handler> = {
 
   // journal
   addTrade: trades.addTrade as Handler,
+  updateTrade: trades.updateTrade as Handler,
   deleteTrade: trades.deleteTrade as Handler,
   addShots: trades.addShots as Handler,
 

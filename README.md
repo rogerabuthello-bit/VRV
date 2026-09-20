@@ -99,6 +99,26 @@ With a spec set, the risk amount on a trade is derived from the lot size
 rather than typed, which makes PnL exact instead of an estimate. Without one,
 you type the risk amount as before.
 
+### The psychology layer
+
+Performance numbers say *what* happened. These say *why*, which is the part you
+can actually change.
+
+- **Mistake tags** — a fixed list (chased entry, moved stop, revenge trade,
+  oversized…) ticked per trade. The dashboard ranks them by what each one
+  costs: how far that mistake's average R sits below your overall average,
+  across every trade you tagged it on. A mistake's own total R would be
+  misleading, because some of those trades still win.
+- **Feeling at entry** — calm, FOMO, frustrated, tilted… grouped like any
+  other dimension, so you can see which states you trade well in.
+- **Rule checklists** — a strategy's rules become tick-boxes at entry. The
+  dashboard then shows, per rule, your average R when you kept it against when
+  you broke it. `rules_total` is frozen onto each trade, so editing a strategy
+  later cannot rewrite what past trades were measured against.
+
+Trades can be **edited** in place (screenshots are never touched) and the
+current filtered view **exports to CSV**.
+
 ### Stuck? Open `/api/health`
 
 Visit `https://your-app.vercel.app/api/health`. It checks every environment

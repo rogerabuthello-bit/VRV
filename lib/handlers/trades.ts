@@ -4,9 +4,11 @@ import { requireProfile } from '../auth';
 import { check } from '../query';
 import { verifyUploaded, removeObjects, ownsPath } from './shots';
 import {
-  QUALITY, SESSIONS, MAX_SHOTS, EXIT_REASONS, detectExitReason, riskOfPosition,
+  QUALITY, SESSIONS, MAX_SHOTS, EXIT_REASONS, MISTAKES, EMOTIONS,
+  detectExitReason, riskOfPosition, pickFrom,
   num, round, validTz, validCcy, offsetMin, sessionOf, uuid, isIsoDate,
 } from '../util';
+import type { Profile } from '../auth';
 import { equityOf } from './funds';
 
 const DAY = 86400000;
@@ -44,7 +46,10 @@ function closedAt(t: Record<string, unknown>, openDate: string, opened: Date, of
 }
 
 /** Columns added by later migrations; a database missing one still works. */
-const OPTIONAL_COLUMNS = ['closed_utc', 'exit_reason', 'lots', 'risk_pct'];
+const OPTIONAL_COLUMNS = [
+  'closed_utc', 'exit_reason', 'lots', 'risk_pct', 'mistakes', 'emotion',
+  'rules_followed', 'rules_total',
+];
 
 /**
  * Saves the trade, and if the database has not had a later migration applied
@@ -65,9 +70,20 @@ async function insertTrade(supabase: ReturnType<typeof db>, row: Record<string, 
   return supabase.from('trades').insert(attempt).select('id').single();
 }
 
-/** Add a completed trade for the signed-in user. */
-export async function addTrade(bearer: string | undefined, raw: unknown) {
-  const who = await requireProfile(bearer);
+/**
+ * Validates one trade and works out everything derived from it. Shared by
+ * adding and editing so an edited trade is held to exactly the same rules as
+ * a new one.
+ *
+ * `equityAdjust` is subtracted from equity before working out the risk share,
+ * so editing a trade measures against the account as it stood without that
+ * trade's own result.
+ */
+async function buildTradeRow(
+  who: { id: string; profile: Profile },
+  raw: unknown,
+  equityAdjust = 0,
+) {
   const t = (raw || {}) as Record<string, unknown>;
   const supabase = db();
 
@@ -79,7 +95,7 @@ export async function addTrade(bearer: string | undefined, raw: unknown) {
   const [{ data: haveInstr }, { data: haveStrat }] = await Promise.all([
     supabase.from('instruments').select('id, pip_size, value_per_pip')
       .eq('user_id', who.id).eq('name', instrument).maybeSingle(),
-    supabase.from('strategies').select('name').eq('user_id', who.id).eq('name', strategy).maybeSingle(),
+    supabase.from('strategies').select('name, rules').eq('user_id', who.id).eq('name', strategy).maybeSingle(),
   ]);
   if (!haveInstr) throw new AppError(`Add "${instrument}" in My Setup first.`);
   if (!haveStrat) throw new AppError(`Add the strategy "${strategy}" in My Setup first.`);
@@ -175,15 +191,23 @@ export async function addTrade(bearer: string | undefined, raw: unknown) {
   // after a loss, which the R figure alone hides.
   let riskPct: number | null = null;
   if (risk > 0) {
-    const equity = await equityOf(who.id, currency);
+    const equity = await equityOf(who.id, currency) - equityAdjust;
     if (equity > 0) riskPct = round((risk / equity) * 100, 2);
   }
 
-  const shots = Array.isArray(t.shots) ? t.shots.map(String).filter(Boolean) : [];
-  const screenshots = await verifyUploaded(who.id, shots);
+  // Fixed taxonomies, so anything unrecognised is dropped rather than stored.
+  const mistakes = pickFrom(t.mistakes, MISTAKES);
+  const rawEmotion = String(t.emotion || '').trim();
+  const emotion = (EMOTIONS as readonly string[]).includes(rawEmotion) ? rawEmotion : null;
 
-  const { data, error } = await insertTrade(supabase, {
-      user_id: who.id,
+  // The strategy's rules are frozen onto the trade: editing the strategy later
+  // must not rewrite what past trades were measured against.
+  const stratRules: string[] = Array.isArray((haveStrat as { rules?: string[] }).rules)
+    ? (haveStrat as { rules: string[] }).rules
+    : [];
+  const rulesFollowed = pickFrom(t.rulesFollowed, stratRules);
+
+  const row: Record<string, unknown> = {
       trade_date: date,
       instrument,
       direction,
@@ -203,22 +227,20 @@ export async function addTrade(bearer: string | undefined, raw: unknown) {
       quality,
       notes: String(t.notes || '').slice(0, 2000),
       confidence,
-      screenshots,
       timezone,
       opened_utc: opened.toISOString(),
       closed_utc: closed ? closed.toISOString() : null,
       exit_reason: exitReason,
       risk_pct: riskPct,
+      mistakes,
+      emotion,
+      rules_followed: rulesFollowed,
+      rules_total: stratRules.length,
       session,
       currency,
-  });
-  if (error) {
-    await removeObjects(screenshots);
-    throw new AppError(error.message, 500);
-  }
+  };
 
-  return {
-    id: data.id as string,
+  const summary = {
     r: resultR,
     plannedRR: plannedRR === null ? '' : plannedRR,
     pnl: pnl === null ? '' : pnl,
@@ -229,8 +251,58 @@ export async function addTrade(bearer: string | undefined, raw: unknown) {
     risk: risk || '',
     lots: lots ?? '',
     riskPct: riskPct ?? '',
+    mistakes,
+    emotion: emotion ?? '',
     heldMinutes: closed ? Math.round((closed.getTime() - opened.getTime()) / 60000) : '',
   };
+
+  return { row, summary, screenshotInput: t.shots };
+}
+
+/** Add a completed trade for the signed-in user. */
+export async function addTrade(bearer: string | undefined, raw: unknown) {
+  const who = await requireProfile(bearer);
+  const { row, summary, screenshotInput } = await buildTradeRow(who, raw);
+
+  const shots = Array.isArray(screenshotInput) ? screenshotInput.map(String).filter(Boolean) : [];
+  const screenshots = await verifyUploaded(who.id, shots);
+
+  const { data, error } = await insertTrade(db(), { ...row, user_id: who.id, screenshots });
+  if (error) {
+    await removeObjects(screenshots);
+    throw new AppError(error.message, 500);
+  }
+  return { id: data.id as string, ...summary };
+}
+
+/**
+ * Correct one of MY trades in place. Screenshots are deliberately untouched -
+ * fixing a typo should never cost you the chart you attached.
+ */
+export async function updateTrade(bearer: string | undefined, rawId: unknown, raw: unknown) {
+  const who = await requireProfile(bearer);
+  const id = uuid(rawId, 'trade');
+  const supabase = db();
+
+  const { data: existing, error: findErr } = await supabase
+    .from('trades').select('id, user_id, pnl').eq('id', id).maybeSingle();
+  if (findErr) throw new AppError(findErr.message, 500);
+  if (!existing) throw new AppError('Trade not found.', 404);
+  if (existing.user_id !== who.id) throw new AppError('You can only edit your own trades.', 403);
+
+  // Equity already contains this trade's result; take it back out so the risk
+  // share is measured against the account as it stood before the trade.
+  const { row, summary } = await buildTradeRow(who, raw, Number(existing.pnl) || 0);
+
+  const attempt = { ...row };
+  for (let i = 0; i <= OPTIONAL_COLUMNS.length; i += 1) {
+    const res = await supabase.from('trades').update(attempt).eq('id', id).eq('user_id', who.id);
+    if (!res.error) return { id, ...summary };
+    const missing = OPTIONAL_COLUMNS.find((c) => c in attempt && res.error!.message.includes(c));
+    if (!missing) throw new AppError(res.error.message, 500);
+    delete attempt[missing];
+  }
+  throw new AppError('Could not save those changes.', 500);
 }
 
 /** Delete one of MY trades, along with its screenshots. */

@@ -2,6 +2,9 @@ let ALL = [], INSTR = [], STRATS = [];
 
 const QUALS = ['Good Win','Bad Win','Good Loss','Bad Loss'];
 const EXITS = ['Target hit','Ran past target','Trailed stop hit','Stopped out','Manual close'];
+const MISTAKES = ['Chased entry','Entered early','No setup','Moved stop','Oversized','Closed early','Held too long','Revenge trade','Overtraded'];
+const EMOTIONS = ['Calm','Confident','FOMO','Anxious','Frustrated','Bored','Tilted','Distracted'];
+let PICKED = [], EDITING = null;                    // mistake tags, and the trade being edited
 let MYRISK = 1;                                     // planned risk per trade, % of equity
 const specOf = name => INSTR.find(i => i.trader===ME && i.name===name) || null;
 const hasSpec = sp => !!(sp && sp.pipSize>0 && sp.valuePerPip>0);
@@ -264,8 +267,8 @@ const CCOL=['','#ef4444','#f97316','#facc15','#84cc16','#22c55e'];
 const miniBar=v=>{v=+v||0; if(!v) return '–'; return '<span class="cmini" title="'+v+'/5">'+[1,2,3,4,5].map(i=>`<i style="${i<=v?'background:'+CCOL[v]:''}"></i>`).join('')+'</span>';};
 $('date').value = new Date().toLocaleDateString('en-CA');
 $('trendBy').addEventListener('change',render);
-['fTrader','fFrom','fTo','fInstr','fStrat','fQual','fTrail','fConf','fSess','fExit'].forEach(id => $(id).addEventListener('change', render));
-$('reset').onclick = () => { ['fFrom','fTo','fInstr','fStrat','fQual','fTrail','fConf','fSess','fExit'].forEach(i=>$(i).value=''); $('fTrader').value='__ALL__'; render(); };
+['fTrader','fFrom','fTo','fInstr','fStrat','fQual','fTrail','fConf','fSess','fExit','fEmotion','fMistake'].forEach(id => $(id).addEventListener('change', render));
+$('reset').onclick = () => { ['fFrom','fTo','fInstr','fStrat','fQual','fTrail','fConf','fSess','fExit','fEmotion','fMistake'].forEach(i=>$(i).value=''); $('fTrader').value='__ALL__'; render(); };
 $('refresh').onclick = () => load().catch(fail);
 ['entry','sl','fsl','tp','exit','risk','dir'].forEach(id => $(id).addEventListener('input', preview));
 
@@ -282,7 +285,8 @@ function load(){
     fillForm(); fillFilters();
     if(!SCOPE_TOUCHED){ $('fTrader').value = ALL.some(t=>t.trader===ME) ? ME : '__ALL__'; }
     MYRISK=+d.riskPct||1; if(!$('calcPct').value) $('calcPct').value=MYRISK;
-    fillTz(); fillCcy(); fillExitReason(); render(); renderSetup(); syncRiskFromLots(); renderCalc();
+    fillTz(); fillCcy(); fillExitReason(); fillEmotions(); renderMistakes(); renderRules();
+    render(); renderSetup(); syncRiskFromLots(); renderCalc();
     if(wasLocked) showTab('dash');
   });
 }
@@ -304,6 +308,8 @@ function fillForm(sel){
 function fillFilters(){
   const keep=(el,vals,first)=>{const c=el.value; el.innerHTML=first+[...new Set(vals)].filter(Boolean).sort().map(v=>`<option>${esc(v)}</option>`).join(''); if([...el.options].some(o=>o.value===c)) el.value=c;};
   keep($('fTrader'), [...MEMBERS,...ALL.map(t=>t.trader)], '<option value="__ALL__">Overall (whole team)</option>');
+  keep($('fEmotion'), ALL.map(t=>t.emotion), '<option value="">All</option><option value="__none">Not recorded</option>');
+  keep($('fMistake'), ALL.flatMap(t=>t.mistakes||[]), '<option value="">All</option><option value="__none">Clean trades only</option>');
   keep($('fInstr'), ALL.map(t=>t.instrument), '<option value="">All</option>');
   keep($('fStrat'), ALL.map(t=>t.strategy), '<option value="">All</option>');
 }
@@ -513,7 +519,7 @@ function renderSetup(){
   }).join('') : '<span class="hint">No strategies yet – write your first one above.</span>';
   $('myStratList').querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{
     const s=myStratObjs().find(x=>x.name===b.dataset.edit); if(!s) return;
-    $('stName').value=s.name; $('stDesc').value=s.description||''; $('stName').focus(); window.scrollTo({top:0,behavior:'smooth'});
+    $('stName').value=s.name; $('stDesc').value=s.description||''; $('stRules').value=(s.rules||[]).join('\n'); $('stName').focus(); window.scrollTo({top:0,behavior:'smooth'});
   });
   $('myStratList').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
     if(!confirm('Remove strategy "'+b.dataset.del+'"? Past trades are kept.')) return;
@@ -600,7 +606,7 @@ $('setInstrAdd').onclick=()=>{
 $('setInstr').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('setInstrAdd').click(); } });
 $('stSave').onclick=()=>{
   const n=$('stName').value.trim(); if(!n){ alert('Give the strategy a name.'); return; }
-  api('saveStrategy',n,$('stDesc').value.trim()).then(()=>{ $('stName').value=''; $('stDesc').value=''; return load(); }).catch(fail);
+  api('saveStrategy',n,$('stDesc').value.trim(),$('stRules').value).then(()=>{ $('stName').value=''; $('stDesc').value=''; $('stRules').value=''; return load(); }).catch(fail);
 };
 
 // ---- live preview & quality options ----
@@ -640,6 +646,47 @@ function updateExitHint(){
     : 'Worked out from your prices: ' + guess;
 }
 $('xreason').addEventListener('change', updateExitHint);
+
+function renderMistakes(){
+  $('mistakes').innerHTML = MISTAKES.map(m =>
+    `<button type="button" class="tagpick${PICKED.includes(m)?' on':''}" data-m="${esc(m)}" aria-pressed="${PICKED.includes(m)}">${esc(m)}</button>`).join('');
+  $('mistakes').querySelectorAll('[data-m]').forEach(b => b.onclick = () => {
+    const m = b.dataset.m;
+    PICKED = PICKED.includes(m) ? PICKED.filter(x => x !== m) : [...PICKED, m];
+    renderMistakes();
+  });
+}
+function fillEmotions(){
+  const cur = $('emotion').value;
+  $('emotion').innerHTML = '<option value="">— not recorded —</option>' + EMOTIONS.map(e=>`<option>${e}</option>`).join('');
+  if(EMOTIONS.includes(cur)) $('emotion').value = cur;
+}
+const rulesOf = name => (STRATS.find(s => s.trader===ME && s.name===name) || {}).rules || [];
+
+function renderRules(checked){
+  const list = rulesOf($('strat').value);
+  $('ruleBox').hidden = !list.length;
+  if(!list.length){ $('rules').innerHTML=''; $('ruleHint').textContent=''; return; }
+  const on = checked || [];
+  $('rules').innerHTML = list.map((r,i) =>
+    `<label class="rule${on.includes(r)?'':' off'}"><input type="checkbox" data-rule="${i}"${on.includes(r)?' checked':''}><span>${esc(r)}</span></label>`).join('');
+  $('rules').querySelectorAll('[data-rule]').forEach(cb => cb.onchange = () => {
+    cb.closest('.rule').classList.toggle('off', !cb.checked);
+    updateRuleHint();
+  });
+  updateRuleHint();
+}
+function checkedRules(){
+  const list = rulesOf($('strat').value);
+  return [...$('rules').querySelectorAll('[data-rule]')].filter(cb=>cb.checked).map(cb=>list[+cb.dataset.rule]).filter(Boolean);
+}
+function updateRuleHint(){
+  const list = rulesOf($('strat').value), n = checkedRules().length;
+  $('ruleHint').innerHTML = !list.length ? ''
+    : n === list.length ? '<span class="pos">All ' + list.length + ' followed.</span>'
+    : `${n} of ${list.length} followed &mdash; <span class="neg">${list.length-n} broken</span>.`;
+}
+$('strat').addEventListener('change', () => renderRules());
 
 function renderCalc(){
   const name=$('instr').value, sp=specOf(name), ccy=$('ccy').value||MYCCY;
@@ -721,13 +768,66 @@ function updateQuality(){
 $('add').onclick = () => {
   const t={date:$('date').value,time:$('ttime').value,closeTime:$('xtime').value,closeDate:$('xdate').value,timezone:$('tz').value,currency:$('ccy').value,session:$('sess').value,instrument:$('instr').value,strategy:$('strat').value,direction:$('dir').value,
     entry:$('entry').value,sl:$('sl').value,finalSl:$('fsl').value,tp:$('tp').value,exit:$('exit').value,
-    risk:$('risk').value,lots:$('lots').value,confidence:$('conf').value,exitReason:$('xreason').value,shots:SHOTS,quality:$('quality').value,notes:$('notes').value};
+    risk:$('risk').value,lots:$('lots').value,confidence:$('conf').value,mistakes:PICKED,emotion:$('emotion').value,rulesFollowed:checkedRules(),exitReason:$('xreason').value,shots:SHOTS,quality:$('quality').value,notes:$('notes').value};
   $('add').disabled=true; $('msg').textContent=SHOTS.length?'Uploading screenshots…':'Saving…';
-  uploadShots(SHOTS).then(paths=>{ t.shots=paths; if(paths.length) $('msg').textContent='Saving trade…'; return api('addTrade',t); }).then(r=>{
-    $('add').disabled=false; $('msg').textContent=`Saved: ${r.outcome} ${fmt(r.r)}R${r.trailed==='Yes'?' (trailed)':''} · ${r.session}`;
-    ['entry','sl','fsl','tp','exit','risk','lots','notes'].forEach(i=>$(i).value=''); $('quality').value=''; $('ttime').value=''; $('xtime').value=''; $('xdate').value=''; $('xreason').value=''; $('sess').value=''; setConf(''); SHOTS=[]; renderThumbs(); preview(); tzPreview(); load().catch(fail);
+  const saving = EDITING
+    ? api('updateTrade', EDITING, t)
+    : uploadShots(SHOTS).then(paths=>{ t.shots=paths; if(paths.length) $('msg').textContent='Saving trade…'; return api('addTrade',t); });
+  saving.then(r=>{
+    $('add').disabled=false;
+    const verb = EDITING ? 'Updated' : 'Saved';
+    if(EDITING) endEdit();
+    $('msg').textContent=`${verb}: ${r.outcome} ${fmt(r.r)}R${r.trailed==='Yes'?' (trailed)':''} · ${r.session}`;
+    ['entry','sl','fsl','tp','exit','risk','lots','notes'].forEach(i=>$(i).value=''); $('quality').value=''; $('ttime').value=''; $('xtime').value=''; $('xdate').value=''; $('xreason').value=''; $('emotion').value=''; $('sess').value=''; PICKED=[]; renderMistakes(); renderRules(); setConf(''); SHOTS=[]; renderThumbs(); preview(); tzPreview(); load().catch(fail);
   }).catch(e=>{ $('add').disabled=false; const m=(e&&e.message)||String(e); if(/AUTH/.test(m)) return fail(e); $('msg').textContent='Error: '+m; });
 };
+function startEdit(id){
+  const t = ALL.find(x => x.id === id);
+  if(!t) return;
+  EDITING = id;
+  document.body.classList.add('editing');
+  $('entryTitle').textContent = 'Edit trade';
+  $('editBadge').hidden = false;
+  $('add').textContent = 'Save changes';
+  $('cancelEdit').hidden = false;
+
+  $('date').value=t.date; $('ttime').value=fmtIn(t.openedUtc,t.timezone||'UTC',false)||'';
+  $('xtime').value = t.closedUtc ? fmtIn(t.closedUtc,t.timezone||'UTC',false) : '';
+  $('xdate').value = t.closedUtc && t.closedUtc.slice(0,10)!==t.date ? t.closedUtc.slice(0,10) : '';
+  fillTz(); $('tz').value=t.timezone||MYTZ; $('sess').value=t.session||'';
+  fillForm({instr:t.instrument, strat:t.strategy});
+  $('dir').value=t.direction;
+  ['entry','sl','tp','exit','risk','lots'].forEach(k=>{});
+  $('entry').value=t.entry; $('sl').value=t.sl; $('fsl').value=t.trailed==='Yes'?t.finalSl:'';
+  $('tp').value=t.tp===''?'':t.tp; $('exit').value=t.exit; $('risk').value=t.risk===''?'':t.risk;
+  $('lots').value=t.lots===''?'':t.lots; $('ccy').value=t.currency||MYCCY;
+  fillExitReason(); $('xreason').value = EXITS.includes(t.exitReason) ? t.exitReason : '';
+  setConf(String(t.confidence||''));
+  PICKED = (t.mistakes||[]).filter(m=>MISTAKES.includes(m)); renderMistakes();
+  fillEmotions(); $('emotion').value = EMOTIONS.includes(t.emotion) ? t.emotion : '';
+  renderRules(t.rulesFollowed||[]);
+  $('notes').value=t.notes||'';
+  SHOTS=[]; renderThumbs();
+  $('msg').textContent='Screenshots stay as they are.';
+  preview(); tzPreview(); syncRiskFromLots(); renderCalc(); updateQuality(); $('quality').value=t.quality;
+  showTab('journal'); window.scrollTo({top:0,behavior:'smooth'});
+}
+function endEdit(){
+  EDITING = null;
+  document.body.classList.remove('editing');
+  $('entryTitle').textContent = 'Log a completed trade';
+  $('editBadge').hidden = true;
+  $('add').textContent = 'Add trade';
+  $('cancelEdit').hidden = true;
+  ['entry','sl','fsl','tp','exit','risk','lots','notes'].forEach(i=>$(i).value='');
+  $('quality').value=''; $('ttime').value=''; $('xtime').value=''; $('xdate').value='';
+  $('xreason').value=''; $('emotion').value=''; $('sess').value='';
+  PICKED=[]; renderMistakes(); renderRules(); setConf(''); SHOTS=[]; renderThumbs();
+  $('msg').textContent=''; preview(); tzPreview(); syncRiskFromLots(); renderCalc();
+}
+$('cancelEdit').onclick = endEdit;
+$('strat').addEventListener('change', updateRuleHint);
+
 function del(id){
   if(!confirm('Delete this trade?')) return;
   api('deleteTrade',id).then(load).catch(fail);
@@ -740,7 +840,9 @@ function filtered(includeTrader=true){
     (!includeTrader||tr==='__ALL__'||t.trader===tr) &&
     (!v('fFrom')||t.date>=v('fFrom')) && (!v('fTo')||t.date<=v('fTo')) &&
     (!v('fInstr')||t.instrument===v('fInstr')) && (!v('fStrat')||t.strategy===v('fStrat')) &&
-    (!v('fQual')||t.quality===v('fQual')) && (!v('fSess')||(v('fSess')==='__none'?!t.session:t.session===v('fSess'))) && (v('fConf')===''||(+t.confidence||0)===+v('fConf')) && (!v('fTrail')||t.trailed===v('fTrail')) && (!v('fExit')||exitOf(t)===v('fExit')))
+    (!v('fQual')||t.quality===v('fQual')) && (!v('fSess')||(v('fSess')==='__none'?!t.session:t.session===v('fSess'))) && (v('fConf')===''||(+t.confidence||0)===+v('fConf')) && (!v('fTrail')||t.trailed===v('fTrail')) && (!v('fExit')||exitOf(t)===v('fExit')) &&
+    (!v('fEmotion')||(v('fEmotion')==='__none'?!t.emotion:t.emotion===v('fEmotion'))) &&
+    (!v('fMistake')||(v('fMistake')==='__none'?!(t.mistakes||[]).length:(t.mistakes||[]).includes(v('fMistake')))))
     .sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:String(a.loggedAt).localeCompare(String(b.loggedAt)));
 }
 function calc(list){
@@ -828,6 +930,8 @@ function render(){
   group('byConf',list,t=>CONF[+t.confidence]||'Not rated','Confidence',true);
   group('byTrail',list,t=>t.trailed==='Yes'?'Trailed SL':'Fixed SL','Type');
   group('byExit',list,exitOf,'How it ended');
+  group('byEmotion',list,t=>t.emotion||'Not recorded','Feeling',true);
+  mistakeTable(list); ruleTable(list);
   leaderboard(); tradesTable(list);
 }
 
@@ -885,6 +989,69 @@ function group(el,list,keyFn,title,byKey){
   $(el).innerHTML=rows.length?`<table><tr><th>${title}</th><th>Trades</th><th>Win %</th><th>Total R</th><th>Avg R</th><th>Good %</th></tr>`+
     rows.map(r=>`<tr><td>${esc(r.k)}</td><td>${r.n}</td><td>${r.winRate==null?'–':fmt(r.winRate,0)+'%'}</td><td class="${cls(r.totalR)}">${fmt(r.totalR)}</td><td class="${cls(r.avgR)}">${fmt(r.avgR)}</td><td>${fmt(r.discipline,0)}%</td></tr>`).join('')+'</table>':'<span style="color:var(--mut)">No data</span>';
 }
+/**
+ * What each mistake actually costs. A mistake's own total R is not the answer,
+ * because some trades still win: the honest figure is how far its average R
+ * falls below your average, multiplied by how often you do it.
+ */
+function mistakeTable(list){
+  const base = calc(list).avgR;
+  const rows = MISTAKES.map(m => {
+    const hit = list.filter(t => (t.mistakes||[]).includes(m));
+    if(!hit.length) return null;
+    const st = calc(hit);
+    return { m, n: st.n, winRate: st.winRate, totalR: st.totalR, avgR: st.avgR,
+             cost: base==null||st.avgR==null ? null : (st.avgR - base) * st.n };
+  }).filter(Boolean).sort((a,b)=>(a.cost??0)-(b.cost??0));
+
+  const clean = list.filter(t => !(t.mistakes||[]).length);
+  if(!rows.length){
+    $('byMistake').innerHTML = list.length
+      ? '<span class="pos">No mistakes tagged in this view. Keep it that way.</span>'
+      : '<span style="color:var(--mut)">No data</span>';
+    return;
+  }
+  $('byMistake').innerHTML = '<table><tr><th>Mistake</th><th>Trades</th><th>Win %</th><th>Total R</th><th>Avg R</th><th>Cost vs your average</th></tr>'
+    + rows.map(r=>`<tr><td>${esc(r.m)}</td><td>${r.n}</td><td>${r.winRate==null?'–':fmt(r.winRate,0)+'%'}</td>`
+      + `<td class="${cls(r.totalR)}">${fmt(r.totalR)}</td><td class="${cls(r.avgR)}">${fmt(r.avgR)}</td>`
+      + `<td class="${cls(r.cost)}">${r.cost==null?'–':fmt(r.cost)+'R'}</td></tr>`).join('')
+    + `<tr class="foot-row"><td>Clean trades</td><td>${clean.length}</td><td>${calc(clean).winRate==null?'–':fmt(calc(clean).winRate,0)+'%'}</td>`
+    + `<td class="${cls(calc(clean).totalR)}">${fmt(calc(clean).totalR)}</td><td class="${cls(calc(clean).avgR)}">${fmt(calc(clean).avgR)}</td><td>–</td></tr></table>`
+    + '<div class="hint" style="margin-top:8px">Cost = how far that mistake\'s average R sits below your overall average, across every trade you tagged it on.</div>';
+}
+
+/** Per rule: what happens when you keep it versus when you do not. */
+function ruleTable(list){
+  const mine = STRATS.filter(s => s.trader===ME && (s.rules||[]).length);
+  const scoped = list.filter(t => t.rulesTotal > 0);
+  if(!mine.length){
+    $('byRule').innerHTML = '<span style="color:var(--mut)">Add a rules checklist to a strategy in My Setup and your adherence shows up here.</span>';
+    return;
+  }
+  if(!scoped.length){
+    $('byRule').innerHTML = '<span style="color:var(--mut)">No trades logged against a checklist yet.</span>';
+    return;
+  }
+  const rows = [];
+  mine.forEach(st => (st.rules||[]).forEach(rule => {
+    const rel = scoped.filter(t => t.strategy===st.name && t.trader===ME);
+    if(!rel.length) return;
+    const kept = rel.filter(t => (t.rulesFollowed||[]).includes(rule));
+    const broke = rel.filter(t => !(t.rulesFollowed||[]).includes(rule));
+    rows.push({ strat: st.name, rule, n: rel.length, kept: kept.length,
+                keptR: kept.length?calc(kept).avgR:null, brokeR: broke.length?calc(broke).avgR:null });
+  }));
+  if(!rows.length){ $('byRule').innerHTML='<span style="color:var(--mut)">No data</span>'; return; }
+  $('byRule').innerHTML = '<table><tr><th>Strategy</th><th>Rule</th><th>Kept</th><th>Avg R when kept</th><th>Avg R when broken</th><th>Difference</th></tr>'
+    + rows.map(r=>{
+        const d = (r.keptR==null||r.brokeR==null) ? null : r.keptR-r.brokeR;
+        return `<tr><td>${esc(r.strat)}</td><td style="white-space:normal;max-width:280px">${esc(r.rule)}</td>`
+          + `<td>${r.kept}/${r.n} <span class="hint">(${fmt(r.kept/r.n*100,0)}%)</span></td>`
+          + `<td class="${cls(r.keptR)}">${fmt(r.keptR)}</td><td class="${cls(r.brokeR)}">${fmt(r.brokeR)}</td>`
+          + `<td class="diff ${cls(d)}">${d==null?'–':(d>0?'+':'')+fmt(d)+'R'}</td></tr>`;
+      }).join('') + '</table>';
+}
+
 function leaderboard(){
   const list=filtered(false), sel=$('fTrader').value, g={};
   [...new Set([...MEMBERS,...list.map(t=>t.trader)])].forEach(m=>g[m]=[]);
@@ -903,9 +1070,42 @@ function leaderboard(){
 function tradesTable(list){
   const me=$('me').value.trim().toLowerCase(), rows=[...list].reverse();
   $('tbl').innerHTML=rows.length?`<table><tr><th>Date</th><th>Time (UTC)</th><th>Time (${esc(MYTZ)})</th><th>Closed (${esc(MYTZ)})</th><th>Held</th><th>Session</th><th>Trader</th><th>Instrument</th><th>Dir</th><th>Strategy</th><th>Lots</th><th>Risk</th><th>Risk %</th><th>Entry</th><th>Init SL</th><th>Final SL</th><th>Init TP</th><th>Exit</th><th>How it ended</th><th>Plan RR</th><th>R</th><th>PnL</th><th>Result</th><th>Quality</th><th>Conf</th><th>Shots</th><th>Notes</th><th></th></tr>`+
-    rows.map(t=>`<tr><td>${esc(t.date)}</td><td>${fmtIn(t.openedUtc,'UTC',false)}</td><td title="Trader's own time: ${esc(fmtIn(t.openedUtc,t.timezone||'UTC',false))} ${esc(t.timezone)}">${fmtIn(t.openedUtc,MYTZ,false)}</td><td>${t.closedUtc?fmtIn(t.closedUtc,MYTZ,false):'–'}</td><td>${fmtDur(holdMin(t))}</td><td>${esc(t.session)||'–'}</td><td>${esc(t.trader)}</td><td>${esc(t.instrument)}</td><td>${t.direction}</td><td>${esc(t.strategy)}</td><td>${t.lots===''||t.lots==null?'–':fmt(t.lots,2)}</td><td>${t.risk===''||t.risk==null?'–':fmt(t.risk)}</td><td class="${t.riskPct>MYRISK*1.1?'neg':''}">${t.riskPct===''||t.riskPct==null?'–':fmt(t.riskPct,2)+'%'}</td><td>${t.entry}</td><td>${t.sl}</td><td>${t.trailed==='Yes'?t.finalSl+' ⤴':'–'}</td><td>${t.tp}</td><td>${t.exit}</td><td>${esc(exitOf(t))}</td><td>${t.plannedRR===''?'–':'1:'+t.plannedRR}</td><td class="${cls(t.r)}">${fmt(t.r)}</td><td class="${cls(t.pnl)}">${t.pnl===''?'–':fmt(t.pnl)+' '+esc(t.currency||'')}</td><td><span class="pill ${t.outcome}">${t.outcome}</span></td><td><span class="pill ${key(t.quality)}">${esc(t.quality)}</span></td><td>${miniBar(t.confidence)}</td><td class="shot-cell">${(t.shots&&t.shots.length)?`<button type="button" class="ghost small" data-view="${esc(t.shots.join(','))}">&#128247; ${t.shots.length}</button>`:''}${(String(t.trader).toLowerCase()===me&&(!t.shots||t.shots.length<MAXSHOTS))?`<button type="button" class="ghost small" data-addshot="${t.id}" title="Add screenshot">+&#128247;</button>`:''}</td><td style="white-space:normal;max-width:220px">${esc(t.notes)}</td><td>${String(t.trader).toLowerCase()===me?`<button class="ghost small" onclick="del('${t.id}')">✕</button>`:''}</td></tr>`).join('')+'</table>'
+    rows.map(t=>`<tr><td>${esc(t.date)}</td><td>${fmtIn(t.openedUtc,'UTC',false)}</td><td title="Trader's own time: ${esc(fmtIn(t.openedUtc,t.timezone||'UTC',false))} ${esc(t.timezone)}">${fmtIn(t.openedUtc,MYTZ,false)}</td><td>${t.closedUtc?fmtIn(t.closedUtc,MYTZ,false):'–'}</td><td>${fmtDur(holdMin(t))}</td><td>${esc(t.session)||'–'}</td><td>${esc(t.trader)}</td><td>${esc(t.instrument)}</td><td>${t.direction}</td><td>${esc(t.strategy)}</td><td>${t.lots===''||t.lots==null?'–':fmt(t.lots,2)}</td><td>${t.risk===''||t.risk==null?'–':fmt(t.risk)}</td><td class="${t.riskPct>MYRISK*1.1?'neg':''}">${t.riskPct===''||t.riskPct==null?'–':fmt(t.riskPct,2)+'%'}</td><td>${t.entry}</td><td>${t.sl}</td><td>${t.trailed==='Yes'?t.finalSl+' ⤴':'–'}</td><td>${t.tp}</td><td>${t.exit}</td><td>${esc(exitOf(t))}</td><td>${t.plannedRR===''?'–':'1:'+t.plannedRR}</td><td class="${cls(t.r)}">${fmt(t.r)}</td><td class="${cls(t.pnl)}">${t.pnl===''?'–':fmt(t.pnl)+' '+esc(t.currency||'')}</td><td><span class="pill ${t.outcome}">${t.outcome}</span></td><td><span class="pill ${key(t.quality)}">${esc(t.quality)}</span></td><td>${miniBar(t.confidence)}</td><td class="shot-cell">${(t.shots&&t.shots.length)?`<button type="button" class="ghost small" data-view="${esc(t.shots.join(','))}">&#128247; ${t.shots.length}</button>`:''}${(String(t.trader).toLowerCase()===me&&(!t.shots||t.shots.length<MAXSHOTS))?`<button type="button" class="ghost small" data-addshot="${t.id}" title="Add screenshot">+&#128247;</button>`:''}</td><td style="white-space:normal;max-width:220px">${esc(t.notes)}</td><td class="shot-cell">${String(t.trader).toLowerCase()===me?`<button type="button" class="ghost small" data-edit-trade="${t.id}">Edit</button><button class="ghost small" onclick="del('${t.id}')">✕</button>`:''}</td></tr>`).join('')+'</table>'
     :'<span style="color:var(--mut)">No trades yet – log your first one above.</span>';
+  $('tbl').querySelectorAll('[data-edit-trade]').forEach(b=>b.onclick=()=>startEdit(b.dataset.editTrade));
 }
+/** Exports exactly what the dashboard is showing, filters and all. */
+function exportCsv(){
+  const rows = filtered();
+  if(!rows.length){ alert('Nothing to export in this view.'); return; }
+  const cols = [
+    ['Date',t=>t.date], ['Opened (UTC)',t=>t.openedUtc], ['Closed (UTC)',t=>t.closedUtc],
+    ['Held (min)',t=>holdMin(t)??''], ['Session',t=>t.session], ['Trader',t=>t.trader],
+    ['Instrument',t=>t.instrument], ['Direction',t=>t.direction], ['Strategy',t=>t.strategy],
+    ['Lots',t=>t.lots], ['Risk',t=>t.risk], ['Risk %',t=>t.riskPct], ['Currency',t=>t.currency],
+    ['Entry',t=>t.entry], ['Initial SL',t=>t.sl], ['Final SL',t=>t.finalSl], ['SL trailed',t=>t.trailed],
+    ['Initial TP',t=>t.tp], ['Exit',t=>t.exit], ['How it ended',t=>exitOf(t)],
+    ['Planned RR',t=>t.plannedRR], ['R',t=>t.r], ['PnL',t=>t.pnl], ['Outcome',t=>t.outcome],
+    ['Quality',t=>t.quality], ['Confidence',t=>t.confidence], ['Feeling',t=>t.emotion],
+    ['Mistakes',t=>(t.mistakes||[]).join('; ')],
+    ['Rules followed',t=>(t.rulesFollowed||[]).join('; ')], ['Rules total',t=>t.rulesTotal],
+    ['Notes',t=>t.notes],
+  ];
+  // Excel reads a leading = + - @ as a formula, so prefix those with a quote.
+  const cell = v => {
+    let x = v===null||v===undefined ? '' : String(v);
+    if(/^[=+\-@]/.test(x)) x = "'" + x;
+    return /[",\n\r]/.test(x) ? '"' + x.replace(/"/g,'""') + '"' : x;
+  };
+  const csv = [cols.map(c=>cell(c[0])).join(','), ...rows.map(t=>cols.map(c=>cell(c[1](t))).join(','))].join('\r\n');
+  const url = URL.createObjectURL(new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8'}));
+  const a = document.createElement('a');
+  a.href = url; a.download = `vrv-trades-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+$('exportCsv').onclick = exportCsv;
+
 const LINECOL=['#8b6cff','#22d3ee','#f5c542','#ff5f6d','#2fd27b','#f472b6','#fb923c','#60a5fa','#a3e635','#c084fc'];
 function drawCurve(list){
   const leg=$('curveLegend'); leg.innerHTML='';

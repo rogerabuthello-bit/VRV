@@ -413,6 +413,22 @@
   body.onboarding.locked #onboard{display:grid;min-height:100vh;place-items:center;padding:20px}
   #onboard{display:none}
 
+  /* ---------------- rules + tags ---------------- */
+  .rulebox{margin-top:16px;padding:14px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--card-2)}
+  .rules{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+  .rule{display:flex;align-items:flex-start;gap:9px;cursor:pointer;font-size:13.5px;color:var(--txt);line-height:1.4}
+  .rule input{width:17px;height:17px;flex:none;margin:1px 0 0;accent-color:var(--accent);cursor:pointer}
+  .rule.off{color:var(--mut)}
+  .tagpicks{display:flex;flex-wrap:wrap;gap:7px;margin-top:2px}
+  .tagpick{
+    padding:6px 12px;border-radius:99px;border:1px solid var(--line);background:var(--inset);
+    color:var(--mut);font-size:12.5px;font-weight:600;cursor:pointer;
+    transition:border-color .15s,color .15s,background .15s;
+  }
+  .tagpick:hover{border-color:color-mix(in srgb,var(--r) 45%,var(--line));color:var(--txt);filter:none}
+  .tagpick.on{background:color-mix(in srgb,var(--r) 18%,var(--inset));border-color:var(--r);color:var(--r)}
+  body.editing .card-entry{border-color:color-mix(in srgb,var(--accent-2) 55%,var(--line))}
+
   /* ---------------- position size calculator ---------------- */
   .calc{
     margin-top:16px;
@@ -521,7 +537,7 @@
   <div class="tabpane" id="tab-journal" hidden>
   <!-- ADD TRADE -->
   <section class="card card-entry">
-    <h2>Log a completed trade</h2>
+    <div class="card-head"><h2 id="entryTitle">Log a completed trade</h2><span class="badge live" id="editBadge" hidden>Editing an existing trade</span></div>
     <div class="grid form">
       <div class="field"><label for="date">Date (your local)</label><input type="date" id="date"></div>
       <div class="field"><label for="ttime">Time trade was taken</label><input type="time" id="ttime"></div>
@@ -570,6 +586,25 @@
       </div>
       <div class="thumbs" id="thumbs"></div>
     </div>
+    <div class="rulebox" id="ruleBox" hidden>
+      <label id="ruleBoxLabel">Did you follow your rules?</label>
+      <div class="rules" id="rules" role="group" aria-labelledby="ruleBoxLabel"></div>
+      <div class="hint" id="ruleHint"></div>
+    </div>
+
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-top:14px">
+      <div class="field">
+        <label for="emotion">How did you feel going in?</label>
+        <select id="emotion"></select>
+        <div class="hint">Your state at entry &mdash; the honest answer is the useful one</div>
+      </div>
+      <div class="field">
+        <label id="mistakeLabel">What went wrong? (tick any)</label>
+        <div class="tagpicks" id="mistakes" role="group" aria-labelledby="mistakeLabel"></div>
+        <div class="hint">Leave empty if you traded it clean</div>
+      </div>
+    </div>
+
     <div class="field" style="margin-top:14px"><label for="notes">Notes</label><textarea id="notes" rows="2"></textarea></div>
     <section class="card calc" id="calcCard">
       <div class="card-head">
@@ -584,7 +619,11 @@
       <div class="hint" id="calcNote"></div>
     </section>
     <div class="preview" id="preview">Fill entry, initial SL and exit to preview.</div>
-    <div class="entry-actions"><button id="add">Add trade</button><span id="msg"></span></div>
+    <div class="entry-actions">
+      <button id="add">Add trade</button>
+      <button type="button" class="ghost" id="cancelEdit" hidden>Cancel edit</button>
+      <span id="msg"></span>
+    </div>
   </section>
   </div><!-- /tab-journal -->
 
@@ -607,11 +646,14 @@
       <div class="field"><label for="fQual">Quality</label><select id="fQual"><option value="">All</option><option>Good Win</option><option>Bad Win</option><option>Good Loss</option><option>Bad Loss</option></select></div>
       <div class="field"><label for="fConf">Confidence</label><select id="fConf"><option value="">All</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="0">Not rated</option></select></div>
       <div class="field"><label for="fSess">Session</label><select id="fSess"><option value="">All</option><option>Asia</option><option>London</option><option>London/NY</option><option>New York</option><option>Off-hours</option><option value="__none">Not set</option></select></div>
+      <div class="field"><label for="fEmotion">Feeling</label><select id="fEmotion"><option value="">All</option></select></div>
+      <div class="field"><label for="fMistake">Mistake</label><select id="fMistake"><option value="">All</option><option value="__none">Clean trades only</option></select></div>
       <div class="field"><label for="fExit">How it ended</label><select id="fExit"><option value="">All</option><option>Target hit</option><option>Ran past target</option><option>Trailed stop hit</option><option>Stopped out</option><option>Manual close</option></select></div>
       <div class="field"><label for="fTrail">SL trailed</label><select id="fTrail"><option value="">All</option><option>Yes</option><option>No</option></select></div>
       <div class="filters-actions">
         <button class="ghost" id="reset">Reset</button>
         <button class="ghost" id="refresh">&#8635; Refresh</button>
+        <button class="ghost" id="exportCsv" type="button">&#8681; Export CSV</button>
       </div>
     </div>
   </section>
@@ -658,7 +700,12 @@
     <div class="card"><h2>By confidence level</h2><div class="scroll" id="byConf"></div></div>
     <div class="card"><h2>Trailed vs not trailed</h2><div class="scroll" id="byTrail"></div></div>
     <div class="card"><h2>How trades ended</h2><div class="scroll" id="byExit"></div></div>
+    <div class="card"><h2>By feeling at entry</h2><div class="scroll" id="byEmotion"></div></div>
   </div>
+
+  <section class="card card-focus"><h2>What your mistakes cost</h2><div class="scroll" id="byMistake"></div></section>
+
+  <section class="card card-quality"><h2>Rule adherence</h2><div class="scroll" id="byRule"></div></section>
 
   <section class="card"><h2>Strategy playbook</h2><div id="playbook"></div></section>
 
@@ -679,6 +726,7 @@
         <h2>Add / edit a strategy</h2>
         <div class="field"><label for="stName">Strategy name</label><input id="stName" placeholder="e.g. London breakout" autocomplete="off"></div>
         <div class="field" style="margin-top:12px"><label for="stDesc">Description (your rules: entry, stop, target, when NOT to trade)</label><textarea id="stDesc" rows="5" placeholder="Write the rules you promise to follow. &quot;Good&quot; trades = you followed these."></textarea></div>
+        <div class="field" style="margin-top:12px"><label for="stRules">Rules checklist (one per line)</label><textarea id="stRules" rows="5" placeholder="Waited for the setup to complete&#10;Risked no more than my plan&#10;Did not move my stop"></textarea><div class="hint">You tick these off when logging a trade, so discipline gets measured instead of guessed.</div></div>
         <div class="entry-actions"><button id="stSave" type="button">Save strategy</button><span class="hint">Saving with an existing name updates its description.</span></div>
       </section>
     </div>

@@ -84,6 +84,21 @@ export function lotsForRisk(o: {
   return lots > 0 ? Number(lots.toFixed(dp)) : 0;
 }
 
+export const MISTAKES = [
+  'Chased entry', 'Entered early', 'No setup', 'Moved stop', 'Oversized',
+  'Closed early', 'Held too long', 'Revenge trade', 'Overtraded',
+] as const;
+
+export const EMOTIONS = [
+  'Calm', 'Confident', 'FOMO', 'Anxious', 'Frustrated', 'Bored', 'Tilted', 'Distracted',
+] as const;
+
+/** Keeps only values from a fixed list, de-duplicated and in list order. */
+export function pickFrom(raw: unknown, allowed: readonly string[]): string[] {
+  const got = new Set((Array.isArray(raw) ? raw : []).map(String));
+  return allowed.filter((v) => got.has(v));
+}
+
 export const MAX_SHOTS = 4;
 export const MAX_SHOT_BYTES = 4 * 1024 * 1024;
 

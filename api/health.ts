@@ -181,6 +181,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           ? ok('recorded')
           : bad('migration 0004 not applied - run supabase/migrations/0004_position_sizing.sql.');
 
+        const psych = await rest('trades?select=mistakes,emotion,rules_followed&limit=1');
+        checks.tradePsychology = psych.ok
+          ? ok('recorded')
+          : bad('migration 0005 not applied - run supabase/migrations/0005_psychology.sql.');
+
         const sa = await rest('users?select=username&role=eq.superadmin&limit=1');
         if (sa.ok) {
           const rows = (await sa.json()) as { username: string }[];
