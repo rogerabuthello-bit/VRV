@@ -48,7 +48,7 @@ function closedAt(t: Record<string, unknown>, openDate: string, opened: Date, of
 /** Columns added by later migrations; a database missing one still works. */
 const OPTIONAL_COLUMNS = [
   'closed_utc', 'exit_reason', 'lots', 'risk_pct', 'mistakes', 'emotion',
-  'rules_followed', 'rules_total', 'broker',
+  'rules_followed', 'rules_total', 'broker', 'poi',
 ];
 
 /**
@@ -100,7 +100,7 @@ async function buildTradeRow(
   const [{ data: haveInstr }, { data: haveStrat }] = await Promise.all([
     supabase.from('instruments').select('id, pip_size, value_per_pip')
       .eq('user_id', who.id).eq('name', instrument).eq('broker', broker).maybeSingle(),
-    supabase.from('strategies').select('name, rules').eq('user_id', who.id).eq('name', strategy).maybeSingle(),
+    supabase.from('strategies').select('name, rules, pois').eq('user_id', who.id).eq('name', strategy).maybeSingle(),
   ]);
   if (!haveInstr) {
     throw new AppError(
@@ -217,6 +217,12 @@ async function buildTradeRow(
     : [];
   const rulesFollowed = pickFrom(t.rulesFollowed, stratRules);
 
+  // A point of interest only means something inside the strategy that reads it.
+  const stratPois: string[] = Array.isArray((haveStrat as { pois?: string[] }).pois)
+    ? (haveStrat as { pois: string[] }).pois
+    : [];
+  const poi = pickFrom([t.poi], stratPois)[0] ?? null;
+
   const row: Record<string, unknown> = {
       trade_date: date,
       instrument,
@@ -246,6 +252,7 @@ async function buildTradeRow(
       emotion,
       rules_followed: rulesFollowed,
       rules_total: stratRules.length,
+      poi,
       broker,
       session,
       currency,
@@ -264,6 +271,7 @@ async function buildTradeRow(
     riskPct: riskPct ?? '',
     broker,
     mistakes,
+    poi: poi ?? '',
     emotion: emotion ?? '',
     heldMinutes: closed ? Math.round((closed.getTime() - opened.getTime()) / 60000) : '',
   };

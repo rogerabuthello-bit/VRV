@@ -436,6 +436,24 @@
   .dirbtn.short:hover,.dirbtn.short.on{background:color-mix(in srgb,var(--r) 20%,var(--inset));border-color:var(--r);color:var(--r)}
   .dirbtn.on{box-shadow:inset 0 0 0 1px currentColor}
 
+  /* ---------------- numbered form sections ---------------- */
+  .formsec{
+    padding:14px 0 2px;border-top:1px solid var(--line);margin-top:18px;
+  }
+  .formsec:first-of-type{border-top:0;margin-top:0;padding-top:2px}
+  .fs-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-bottom:13px}
+  .fs-n{
+    font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.1em;
+    color:var(--accent);padding:2px 6px;border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));
+    border-radius:2px;line-height:1.2;
+  }
+  .fs-head h3{
+    margin:0;font-family:var(--font-head);font-size:16px;font-weight:600;
+    letter-spacing:-.01em;color:var(--txt-strong);
+  }
+  .fs-sub{font-size:11.5px;color:var(--mut-2)}
+  .formsec .rulebox{margin-top:4px}
+
   /* ---------------- broker bar ---------------- */
   .brokerbar{
     margin-bottom:16px;padding:12px 13px;
@@ -849,6 +867,8 @@
       <div class="pipcell"><span class="l">Risking</span><span class="v" id="pipRisk">–</span></div>
       <div class="pipcell"><span class="l">of equity</span><span class="v" id="pipPct">–</span></div>
     </div>
+    <div class="formsec">
+      <div class="fs-head"><span class="fs-n">01</span><h3>When</h3><span class="fs-sub">The clock it happened on</span></div>
     <div class="grid form">
       <div class="field"><label for="date">Date (your local)</label><input type="date" id="date"></div>
       <div class="field"><label for="ttime">Time trade was taken</label><input type="time" id="ttime"></div>
@@ -856,6 +876,11 @@
       <div class="field"><label for="xdate">Closed on (if not the same day)</label><input type="date" id="xdate"><div class="hint">Blank = same day, or next day if earlier</div></div>
       <div class="field"><label for="tz">Time zone (UTC/GMT)</label><select id="tz"></select><div class="hint" id="tzHint">Defaults to your saved time zone</div></div>
       <div class="field"><label for="sess">Session</label><select id="sess"><option value="">Auto (from time)</option></select></div>
+    </div></div>
+
+    <div class="formsec">
+      <div class="fs-head"><span class="fs-n">02</span><h3>What</h3><span class="fs-sub">The market, the model, the side</span></div>
+    <div class="grid form">
       <div class="field"><label for="brokerSel">Broker</label><select id="brokerSel"></select><div class="hint">Pip settings are saved per broker</div></div>
       <div class="field"><label for="instr">Instrument</label>
         <select id="instr"></select>
@@ -872,6 +897,23 @@
           <button type="button" class="dirbtn short" data-dir="Short" aria-pressed="false">&#9660; Short</button>
         </div>
       </div>
+    </div></div>
+
+    <div class="formsec">
+      <div class="fs-head"><span class="fs-n">03</span><h3>Why</h3><span class="fs-sub">The point of interest you traded</span></div>
+      <div class="grid form">
+        <div class="field field-wide"><label for="poi">Point of interest</label><select id="poi"></select><div class="hint" id="poiHint">Set your POIs per strategy in My Setup</div></div>
+      </div>
+    <div class="rulebox" id="ruleBox" hidden>
+      <label id="ruleBoxLabel">Did you follow your rules?</label>
+      <div class="rules" id="rules" role="group" aria-labelledby="ruleBoxLabel"></div>
+      <div class="hint" id="ruleHint"></div>
+    </div>
+    </div>
+
+    <div class="formsec">
+      <div class="fs-head"><span class="fs-n">04</span><h3>Levels &amp; size</h3><span class="fs-sub">Where you got in, out, and how big</span></div>
+    <div class="grid form">
       <div class="field"><label for="entry">Entry</label><input type="number" step="any" id="entry" inputmode="decimal"></div>
       <div class="field"><label for="sl">Initial SL (planned)</label><input type="number" step="any" id="sl" inputmode="decimal"></div>
       <div class="field"><label for="fsl">Final SL (if trailed)</label><input type="number" step="any" id="fsl" inputmode="decimal"><div class="hint">Leave blank if not moved</div></div>
@@ -881,6 +923,11 @@
       <div class="field"><label for="lots">Lot size</label><input type="number" step="any" min="0" id="lots" inputmode="decimal"><div class="hint" id="lotsHint">Type either this or the risk amount</div></div>
       <div class="field"><label for="risk">Risk amount</label><input type="number" step="any" min="0" id="risk" inputmode="decimal"><div class="hint" id="riskHint">Type a risk and the lot size follows</div></div>
       <div class="field"><label for="ccy">Currency</label><select id="ccy"></select><div class="hint">Your base currency by default</div></div>
+    </div></div>
+
+    <div class="formsec">
+      <div class="fs-head"><span class="fs-n">05</span><h3>Review</h3><span class="fs-sub">How you judged it, and how you felt</span></div>
+    <div class="grid form">
       <div class="field field-wide">
         <label id="confLabel" for="cbar">Confidence: &ldquo;I was confident in this trade&rdquo;</label>
         <input type="hidden" id="conf">
@@ -904,11 +951,6 @@
       </div>
       <div class="thumbs" id="thumbs"></div>
     </div>
-    <div class="rulebox" id="ruleBox" hidden>
-      <label id="ruleBoxLabel">Did you follow your rules?</label>
-      <div class="rules" id="rules" role="group" aria-labelledby="ruleBoxLabel"></div>
-      <div class="hint" id="ruleHint"></div>
-    </div>
 
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-top:14px">
       <div class="field">
@@ -921,6 +963,8 @@
         <div class="tagpicks" id="mistakes" role="group" aria-labelledby="mistakeLabel"></div>
         <div class="hint">Leave empty if you traded it clean</div>
       </div>
+    </div>
+
     </div>
 
     <div class="field" style="margin-top:14px"><label for="notes">Notes</label><textarea id="notes" rows="2"></textarea></div>
@@ -972,6 +1016,7 @@
       <div class="field"><label for="fSess">Session</label><select id="fSess"><option value="">All</option><option>Asia</option><option>London</option><option>London/NY</option><option>New York</option><option>Off-hours</option><option value="__none">Not set</option></select></div>
       <div class="field"><label for="fEmotion">Feeling</label><select id="fEmotion"><option value="">All</option></select></div>
       <div class="field"><label for="fMistake">Mistake</label><select id="fMistake"><option value="">All</option><option value="__none">Clean trades only</option></select></div>
+      <div class="field"><label for="fPoi">Point of interest</label><select id="fPoi"><option value="">All</option></select></div>
       <div class="field"><label for="fExit">How it ended</label><select id="fExit"><option value="">All</option><option>Target hit</option><option>Ran past target</option><option>Trailed stop hit</option><option>Stopped out</option><option>Manual close</option></select></div>
       <div class="field"><label for="fTrail">SL trailed</label><select id="fTrail"><option value="">All</option><option>Yes</option><option>No</option></select></div>
       <div class="filters-actions">
@@ -1053,6 +1098,7 @@
     <div class="card"><h2>How trades ended</h2><div class="scroll" id="byExit"></div></div>
     <div class="card"><h2>By feeling at entry</h2><div class="scroll" id="byEmotion"></div></div>
     <div class="card card-focus"><h2>Results by risk taken</h2><div class="scroll" id="byRisk"></div></div>
+    <div class="card"><h2>By point of interest</h2><div class="scroll" id="byPoi"></div></div>
   </div>
 
   <section class="card card-focus"><h2>What your mistakes cost</h2><div class="scroll" id="byMistake"></div></section>
@@ -1130,6 +1176,7 @@
         <h2>Add / edit a strategy</h2>
         <div class="field"><label for="stName">Strategy name</label><input id="stName" placeholder="e.g. London breakout" autocomplete="off"></div>
         <div class="field" style="margin-top:12px"><label for="stDesc">Description (your rules: entry, stop, target, when NOT to trade)</label><textarea id="stDesc" rows="5" placeholder="Write the rules you promise to follow. &quot;Good&quot; trades = you followed these."></textarea></div>
+        <div class="field" style="margin-top:12px"><label for="stPois">Points of interest (one per line)</label><textarea id="stPois" rows="4" placeholder="Order block&#10;Fair value gap&#10;Liquidity sweep&#10;Daily level"></textarea><div class="hint">The levels this model trades. You pick one when logging, so you can see which actually pay.</div></div>
         <div class="field" style="margin-top:12px"><label for="stRules">Rules checklist (one per line)</label><textarea id="stRules" rows="5" placeholder="Waited for the setup to complete&#10;Risked no more than my plan&#10;Did not move my stop"></textarea><div class="hint">You tick these off when logging a trade, so discipline gets measured instead of guessed.</div></div>
         <div class="entry-actions"><button id="stSave" type="button">Save strategy</button><span class="hint">Saving with an existing name updates its description.</span></div>
       </section>

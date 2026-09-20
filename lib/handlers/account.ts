@@ -16,7 +16,7 @@ interface TradeRow {
   session: string; currency: string; closed_utc: string | null; exit_reason: string | null;
   lots: number | null; risk_pct: number | null; broker: string | null;
   mistakes: string[] | null; emotion: string | null;
-  rules_followed: string[] | null; rules_total: number | null;
+  rules_followed: string[] | null; rules_total: number | null; poi: string | null;
   trader: { username: string } | null;
 }
 
@@ -50,10 +50,10 @@ export async function getBootstrap(bearer: string | undefined) {
       .from('instruments')
       .select('name, broker, pip_size, value_per_pip, lot_step, trader:users!inner(username)')),
     fetchAll<{
-      name: string; description: string; rules: string[] | null;
+      name: string; description: string; rules: string[] | null; pois: string[] | null;
       trader: { username: string } | null;
     }>(() => supabase
-      .from('strategies').select('name, description, rules, trader:users!inner(username)')),
+      .from('strategies').select('name, description, rules, pois, trader:users!inner(username)')),
     fetchAll<{ username: string }>(() =>
       supabase.from('users').select('username').eq('disabled', false)),
     fetchAll<{ id: string; entry_date: string; type: string; amount: string; currency: string; note: string }>(() =>
@@ -89,6 +89,7 @@ export async function getBootstrap(bearer: string | undefined) {
     strategies: stratRows.map((r) => ({
       trader: r.trader?.username || '', name: r.name, description: r.description || '',
       rules: r.rules || [],
+      pois: r.pois || [],
     })),
     trades: tradeRows.map((t) => ({
       id: t.id,
@@ -124,6 +125,7 @@ export async function getBootstrap(bearer: string | undefined) {
       emotion: t.emotion || '',
       rulesFollowed: t.rules_followed || [],
       rulesTotal: t.rules_total || 0,
+      poi: t.poi || '',
       session: t.session || '',
       currency: t.currency || '',
     })),

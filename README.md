@@ -161,6 +161,19 @@ happened to you there, in your own numbers:
 It also catches the opposite mistake. If your recent trades average well under
 your plan, your size has not kept up with your equity, and it says so.
 
+### The log form reads as a question
+
+Entry is grouped into numbered sections rather than one long grid: **When**
+(date, times, timezone, session), **What** (broker, instrument, strategy,
+direction), **Why** (point of interest and the rule checklist), **Levels &
+size**, then **Review**.
+
+A **point of interest** is the level or structure that made the trade worth
+taking, and the list belongs to the strategy — a POI only means anything
+inside the model that reads it, so each strategy carries its own alongside its
+rules. Pick one when logging and the dashboard shows which levels actually
+pay, with a matching filter.
+
 ### The psychology layer
 
 Performance numbers say *what* happened. These say *why*, which is the part you

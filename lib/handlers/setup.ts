@@ -85,21 +85,23 @@ export async function removeInstrument(bearer: string | undefined, name: unknown
 
 /** Create or update (by name) one of MY strategies. */
 export async function saveStrategy(
-  bearer: string | undefined, rawName: unknown, rawDesc: unknown, rawRules?: unknown,
+  bearer: string | undefined, rawName: unknown, rawDesc: unknown,
+  rawRules?: unknown, rawPois?: unknown,
 ) {
   const who = await requireProfile(bearer);
   const name = String(rawName || '').trim().slice(0, 80);
   if (!name) throw new AppError('Strategy name is required.');
   const description = String(rawDesc || '').trim().slice(0, 2000);
   // One rule per line, trimmed and capped so the entry checklist stays usable.
-  const rules = rawRules === undefined ? null : String(rawRules || '')
-    .split('\n').map((r) => r.trim()).filter(Boolean).slice(0, 20)
-    .map((r) => r.slice(0, 160));
+  const lines = (raw: unknown, max: number, len: number) => String(raw || '')
+    .split('\n').map((r) => r.trim()).filter(Boolean).slice(0, max).map((r) => r.slice(0, len));
+  const rules = rawRules === undefined ? null : lines(rawRules, 20, 160);
+  const pois = rawPois === undefined ? null : lines(rawPois, 24, 80);
   const supabase = db();
 
   const { data: existing, error } = await supabase
     .from('strategies')
-    .select('id, name, rules')
+    .select('id, name, rules, pois')
     .eq('user_id', who.id)
     .ilike('name', name)
     .maybeSingle();
@@ -109,8 +111,12 @@ export async function saveStrategy(
     // Keep the stored spelling - logged trades reference it by name.
     const patch: Record<string, unknown> = { description, updated_at: new Date().toISOString() };
     if (rules !== null) patch.rules = rules;
+    if (pois !== null) patch.pois = pois;
     const upd = await supabase.from('strategies').update(patch).eq('id', existing.id);
     if (upd.error) {
+      if (/pois/.test(upd.error.message)) {
+        throw new AppError('Run migration 0008 in Supabase to save points of interest.');
+      }
       if (/rules/.test(upd.error.message)) {
         throw new AppError('Run migration 0005 in Supabase to save strategy rules.');
       }
@@ -121,10 +127,13 @@ export async function saveStrategy(
 
   const insert: Record<string, unknown> = { user_id: who.id, name, description };
   if (rules !== null) insert.rules = rules;
+  if (pois !== null) insert.pois = pois;
   let insErr = (await supabase.from('strategies').insert(insert)).error;
-  if (insErr && /rules/.test(insErr.message)) {
-    delete insert.rules;                       // migration 0005 not applied yet
-    insErr = (await supabase.from('strategies').insert(insert)).error;
+  for (const col of ['pois', 'rules']) {       // drop whatever a pending migration lacks
+    if (insErr && new RegExp(col).test(insErr.message)) {
+      delete insert[col];
+      insErr = (await supabase.from('strategies').insert(insert)).error;
+    }
   }
   if (insErr) {
     if (/strategies_user_name_key/.test(insErr.message)) throw new AppError('You already have a strategy with that name.');
