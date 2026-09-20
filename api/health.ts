@@ -255,6 +255,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           ? ok('recorded')
           : bad('migration 0005 not applied - run supabase/migrations/0005_psychology.sql.');
 
+        const brokers = await rest('instruments?select=broker&limit=1');
+        checks.brokers = brokers.ok
+          ? ok('recorded')
+          : bad('migration 0006 not applied - run supabase/migrations/0006_brokers.sql. '
+                + 'Until then every instrument belongs to one unnamed broker.');
+
         const sa = await rest('users?select=username&role=eq.superadmin&limit=1');
         if (sa.ok) {
           const rows = (await sa.json()) as { username: string }[];
