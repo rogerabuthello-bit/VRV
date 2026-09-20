@@ -7,7 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0d16'/%3E%3Cpath d='M6 9l10 15L26 9' fill='none' stroke='%238b6cff' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M11 9l5 7.5L21 9' fill='none' stroke='%2322d3ee' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   /* ============================================================
      DESIGN TOKENS  ·  dark is the default theme
@@ -15,70 +15,72 @@
   :root{
     color-scheme:dark;
     --font:'Inter',system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    --font-head:'Space Grotesk','Inter',system-ui,sans-serif;
+    --font-mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
 
-    /* ---- VRV Trading brand: ink-black surfaces, violet primary, cyan secondary ---- */
-    --bg:#06080f;
-    --bg-glow:radial-gradient(1000px 520px at 8% -10%, rgba(139,108,255,.20) 0%, transparent 60%),
-              radial-gradient(900px 460px at 100% -5%, rgba(34,211,238,.10) 0%, transparent 55%);
-    --card:#0d111b;
-    --card-2:#0a0e17;
-    --inset:#080b13;
-    --line:#1e2538;
-    --line-soft:#151b2b;
-    --txt:#e7eaf6;
-    --txt-strong:#f8f9ff;
-    --mut:#8f99b7;
-    --mut-2:#5f6a88;
+    /* ---- Stealth Obsidian: lightless surfaces, laser chromatic beacons ---- */
+    --bg:#05070A;
+    --bg-glow:none;
+    --card:#0D0F16;          /* raised container   */
+    --card-2:#0A0D13;        /* sub-surface        */
+    --inset:#06080B;         /* form fields        */
+    --line:#1A1F2C;          /* subtle partition   */
+    --line-soft:#12151D;
+    --txt:#F1F5F9;
+    --txt-strong:#FFFFFF;
+    --mut:#A0AEC0;
+    --mut-2:#7E8B9B;
 
-    --accent:#8b6cff;
-    --accent-strong:#6a48f2;
-    --accent-2:#22d3ee;
-    --accent-ink:#0b0722;
-    --grad:linear-gradient(135deg,#8b6cff 0%,#6a48f2 55%,#3b82f6 100%);
-    --focus:#b9a8ff;
+    --accent:#00E676;        /* laser emerald */
+    --accent-strong:#10B981;
+    --accent-2:#38BDF8;      /* sky, for informational accents */
+    --accent-ink:#05070A;
+    --grad:#00E676;          /* flat: the system rejects gradients */
+    --focus:#00E676;
 
-    /* semantic + quality (aligned with the chart colours in the script) */
-    --g:#2fd27b;   /* positive / Good Win green */
-    --r:#ff5f6d;   /* negative / Bad Loss red   */
-    --b:#4cc4ff;   /* Good Loss blue            */
-    --y:#f5c542;   /* Bad Win amber             */
+    --g:#00E676;   /* positive / long          */
+    --r:#FF334B;   /* negative / short         */
+    --b:#38BDF8;   /* Good Loss, informational */
+    --y:#FFBA79;   /* Bad Win, caution         */
     --pos:var(--g);
     --neg:var(--r);
 
-    --shadow:0 1px 2px rgba(0,0,0,.35), 0 10px 30px -18px rgba(0,0,0,.7);
-    --radius:14px;
-    --radius-sm:9px;
+    /* Depth is tonal stacking and hairlines, never diffuse halos. */
+    --shadow:none;
+    --shadow-float:0 12px 32px -4px rgba(0,0,0,.9);
+    --radius:6px;
+    --radius-sm:4px;
   }
 
   /* ---------- LIGHT THEME (CSS-only toggle, no JS / no storage) ---------- */
   :root:has(#themeToggle:checked){
     color-scheme:light;
-    --bg:#f4f2fc;
-    --bg-glow:radial-gradient(1000px 520px at 8% -10%, rgba(139,108,255,.16) 0%, transparent 60%),
-              radial-gradient(900px 460px at 100% -5%, rgba(34,211,238,.10) 0%, transparent 55%);
-    --card:#ffffff;
-    --card-2:#f7f6fd;
-    --inset:#f3f1fb;
-    --line:#ddd9ef;
-    --line-soft:#ebe8f6;
-    --txt:#1a1636;
-    --txt-strong:#0d0a24;
-    --mut:#5d5a7c;
-    --mut-2:#807d9c;
+    --bg:#F4F6F8;
+    --bg-glow:none;
+    --card:#FFFFFF;
+    --card-2:#F7F9FB;
+    --inset:#F1F4F7;
+    --line:#DDE3EA;
+    --line-soft:#E9EDF2;
+    --txt:#0D1117;
+    --txt-strong:#000000;
+    --mut:#5A6572;
+    --mut-2:#7E8B9B;
 
-    --accent:#6a45e8;
-    --accent-strong:#5232c8;
-    --accent-2:#0a8fa8;
-    --accent-ink:#ffffff;
-    --grad:linear-gradient(135deg,#7c5cf5 0%,#5b3be0 60%,#2f6fe0 100%);
-    --focus:#6a45e8;
+    --accent:#00A352;
+    --accent-strong:#008945;
+    --accent-2:#0273B8;
+    --accent-ink:#FFFFFF;
+    --grad:#00A352;
+    --focus:#00A352;
 
-    --g:#0c8a4e;
-    --r:#d62839;
-    --b:#0a72b8;
-    --y:#9a6a12;
+    --g:#00834A;
+    --r:#D6263C;
+    --b:#0273B8;
+    --y:#9A6A12;
 
-    --shadow:0 1px 2px rgba(16,32,64,.06), 0 12px 28px -20px rgba(16,32,64,.4);
+    --shadow:none;
+    --shadow-float:0 12px 32px -8px rgba(16,32,64,.25);
   }
 
   *{box-sizing:border-box}
@@ -482,6 +484,177 @@
     border:1px dashed color-mix(in srgb,var(--accent) 50%,var(--line));background:var(--card-2);
   }
   .new-code b{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:19px;letter-spacing:.08em;color:var(--txt-strong)}
+
+  /* ==========================================================
+     STEALTH OBSIDIAN OVERRIDE LAYER
+     Applied last so it wins over the original brand rules.
+     ========================================================== */
+
+  body{background:var(--bg);font-size:13px}
+
+  /* --- typography: geometric headings, mono for every number --- */
+  h1,h2,.wordmark b,.card > h2,.card-head h2,.section-title{font-family:var(--font-head)}
+  h1{font-size:24px;font-weight:600;letter-spacing:-.01em}
+  .card > h2,.card-head h2{
+    font-family:var(--font-mono);font-size:10px;font-weight:600;
+    letter-spacing:.08em;text-transform:uppercase;color:var(--mut-2);
+  }
+  .stat .v,.pipcell .v,td,th,input,select,textarea,.code-cell,.badge,.pill,.tag,.diff{
+    font-variant-numeric:tabular-nums lining-nums;
+  }
+  .stat .v,.pipcell .v,.new-code b{font-family:var(--font-mono);letter-spacing:-.02em}
+  td,input,select,textarea{font-family:var(--font-mono);font-size:12.5px}
+  textarea,td[style*="white-space:normal"]{font-family:var(--font)}
+  th{
+    font-family:var(--font-mono);font-size:10px;font-weight:600;
+    letter-spacing:.08em;text-transform:uppercase;color:var(--mut-2);
+  }
+  label,.hint{font-family:var(--font)}
+  label{font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--mut-2)}
+
+  /* --- machined geometry: hairlines, no halos, controlled radii --- */
+  .card,.tabpane > section,.preview,.new-code,.rulebox,.pipstrip{
+    border-radius:var(--radius-sm);box-shadow:none;
+  }
+  .card{background:var(--card);border:1px solid var(--line)}
+  .card-focus,.card-quality,.calc{
+    background:var(--card);
+    border-color:var(--line);
+    border-left:2px solid var(--accent);
+  }
+  .card-quality{border-left-color:var(--b)}
+  input,select,textarea{
+    background:var(--inset);border-radius:var(--radius-sm);border-color:var(--line);
+  }
+  input:focus-visible,select:focus-visible,textarea:focus-visible{
+    border-color:var(--accent);box-shadow:none;outline:none;
+  }
+  input:hover,select:hover,textarea:hover{border-color:var(--line-soft)}
+
+  /* --- buttons: solid, flat, compressing on press --- */
+  button{
+    background:var(--accent);color:var(--accent-ink);border-radius:var(--radius-sm);
+    font-family:var(--font-head);font-weight:600;font-size:13px;letter-spacing:.01em;
+  }
+  button:hover{background:var(--accent-strong);filter:none}
+  button:active{transform:scale(.98)}
+  button.ghost{
+    background:var(--card);border:1px solid var(--line);color:var(--txt);font-family:var(--font);
+  }
+  button.ghost:hover{background:var(--card-2);border-color:var(--line-soft)}
+  .link-btn{background:none;color:var(--accent);font-family:var(--font)}
+  .link-btn:hover{background:none}
+
+  /* --- chips and badges stay boxy; pills are reserved for toggles --- */
+  .pill,.tag,.chip,.badge,.tagpick{
+    border-radius:var(--radius-sm);
+    font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.06em;
+    text-transform:uppercase;
+  }
+  .chip{padding:5px 6px 5px 10px}
+  .chip-x{border-radius:2px}
+
+  /* --- blotter rows: hairlines, no zebra, instant hover --- */
+  table{border-collapse:collapse}
+  th{height:32px;border-bottom:1px solid var(--line)}
+  td{height:34px;border-bottom:1px solid var(--line);color:var(--txt)}
+  tr:hover td{background:var(--line-soft)}
+  .foot-row td{border-top:1px solid var(--line)}
+  .stat .v.pos::after,.stat .v.neg::after,td.pos::after,td.neg::after{content:none}
+
+  /* --- KPI tiles --- */
+  .stat{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius-sm);
+  }
+  .stat .l{
+    font-family:var(--font-mono);font-size:10px;font-weight:600;
+    letter-spacing:.08em;text-transform:uppercase;color:var(--mut-2);
+  }
+  .stat .v{font-size:20px;font-weight:600;color:var(--txt-strong)}
+
+  /* --- terminal shell: header, page rail, footer --- */
+  header{
+    background:var(--bg);backdrop-filter:none;-webkit-backdrop-filter:none;
+    border-bottom:1px solid var(--line);padding:10px 20px;
+  }
+  .logo{
+    background:var(--card);border-radius:var(--radius-sm);
+    border:1px solid color-mix(in srgb,var(--accent) 40%,var(--line));box-shadow:none;
+  }
+  .wordmark b{font-size:17px;font-weight:700;letter-spacing:.01em}
+  .wordmark b i{background:none;-webkit-text-fill-color:var(--accent);color:var(--accent)}
+  .wordmark small{
+    font-family:var(--font-mono);font-size:8.5px;letter-spacing:.24em;color:var(--mut-2);
+  }
+  .deskline{
+    display:flex;align-items:center;gap:8px;font-family:var(--font-mono);
+    font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--mut-2);
+  }
+  .deskline .dot{
+    width:6px;height:6px;border-radius:50%;background:var(--accent);flex:none;
+    box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 22%,transparent);
+  }
+  .equity-tile{
+    display:flex;flex-direction:column;gap:1px;padding:6px 12px;
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius-sm);
+  }
+  .equity-tile .l{
+    font-family:var(--font-mono);font-size:9px;font-weight:600;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--mut-2);
+  }
+  .equity-tile .v{font-family:var(--font-mono);font-size:14px;font-weight:700;color:var(--txt-strong)}
+  .equity-tile .v small{font-size:10px;font-weight:600;color:var(--accent);margin-left:6px}
+
+  .pagehead{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between}
+  .pagehead h1{margin:2px 0 0}
+  .pagehead .crumb{
+    font-family:var(--font-mono);font-size:10px;font-weight:600;
+    letter-spacing:.08em;text-transform:uppercase;color:var(--mut-2);
+  }
+  .pagehead .crumb b{color:var(--accent);font-weight:600}
+
+  /* --- tabs read as terminal switches --- */
+  .tabs{gap:2px;border-bottom:1px solid var(--line)}
+  .tab{
+    font-family:var(--font);font-size:13px;font-weight:500;color:var(--mut);
+    border-bottom:2px solid transparent;border-radius:var(--radius-sm) var(--radius-sm) 0 0;
+  }
+  .tab:hover{background:var(--card-2);color:var(--txt);filter:none}
+  .tab.on{background:var(--card);color:var(--txt-strong);border-bottom-color:var(--accent)}
+
+  footer.telemetry{
+    display:flex;flex-wrap:wrap;gap:8px 22px;align-items:center;
+    max-width:1280px;margin:26px auto 0;padding:14px 20px 28px;
+    border-top:1px solid var(--line);
+    font-family:var(--font-mono);font-size:10px;font-weight:500;
+    letter-spacing:.08em;text-transform:uppercase;color:var(--mut-2);
+  }
+  footer.telemetry b{color:var(--txt);font-weight:600}
+  footer.telemetry .ok{color:var(--accent)}
+
+  /* --- feature colours follow the system --- */
+  .pipstrip{border-color:var(--line);background:var(--card)}
+  .pipcell .v{font-size:17px}
+  .dirbtn{border-radius:var(--radius-sm);font-family:var(--font-head)}
+  .dirbtn.long.on{background:var(--g);border-color:var(--g);color:#05070A;box-shadow:none}
+  .dirbtn.short.on{background:var(--r);border-color:var(--r);color:#05070A;box-shadow:none}
+  .cbar button{border-radius:var(--radius-sm);font-family:var(--font-mono)}
+  .ts-track{border-radius:99px}
+  .ts-thumb{border-radius:50%}
+  .lb-box{border-radius:var(--radius);box-shadow:var(--shadow-float)}
+  .scope button{border-radius:var(--radius-sm);font-family:var(--font)}
+  .scope button.on{background:var(--accent);color:var(--accent-ink);box-shadow:none}
+  button{white-space:nowrap}
+  .stat .v{line-height:1.25}
+  .filters .entry-actions{align-items:flex-end}
+  /* Long text values (a member name, a currency list) must not tower over the tile. */
+  .stat .v:not(.pos):not(.neg){font-size:18px}
+  @media (max-width:760px){
+    header{padding:10px 14px}
+    .equity-tile{display:none}
+    .deskline{display:none}
+    .pagehead h1{font-size:20px}
+  }
 </style>
 </head>
 <body class="locked">
@@ -530,11 +703,16 @@
 <header>
   <div class="brand">
     <span class="logo" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke-linecap="round" stroke-linejoin="round"><defs><linearGradient id="vg" x1="4" y1="6" x2="28" y2="26" gradientUnits="userSpaceOnUse"><stop stop-color="#a48cff"/><stop offset="1" stop-color="#6a48f2"/></linearGradient></defs><path d="M5 8l11 17L27 8" stroke="url(#vg)" stroke-width="4.2"/><path d="M11 8l5 8 5-8" stroke="#22d3ee" stroke-width="3"/></svg></span>
-    <div class="wordmark" role="img" aria-label="VRV Trading Journal"><b>VR<i>V</i></b><small>Trading</small></div>
+    <div class="wordmark" role="img" aria-label="VRV Terminal"><b>VRV<i>TERMINAL</i></b><small>Institutional Core</small></div>
+    <div class="deskline" id="deskLine"><span class="dot" aria-hidden="true"></span><span id="deskClock">--:--:-- UTC</span></div>
   </div>
   <div class="head-tools">
+    <div class="equity-tile" title="Your current equity in your base currency">
+      <span class="l">Equity</span>
+      <span class="v" id="hdrEquity">–<small id="hdrEquityDelta"></small></span>
+    </div>
     <div class="field head-name">
-      <label for="me">Signed in as</label>
+      <label for="me">Trader</label>
       <input id="me" readonly tabindex="-1">
     </div>
     <button class="ghost small" id="logout" type="button">Log out</button>
@@ -557,6 +735,12 @@
   </nav>
 
   <div class="tabpane" id="tab-journal" hidden>
+    <div class="pagehead">
+      <div>
+        <div class="crumb">Execution studio &middot; <b>Active logging terminal</b></div>
+        <h1>Order Entry &amp; Behavioural Ledger</h1>
+      </div>
+    </div>
   <!-- ADD TRADE -->
   <section class="card card-entry">
     <div class="card-head"><h2 id="entryTitle">Log a completed trade</h2><span class="badge live" id="editBadge" hidden>Editing an existing trade</span></div>
@@ -665,6 +849,12 @@
   </div><!-- /tab-journal -->
 
   <div class="tabpane" id="tab-dash">
+    <div class="pagehead">
+      <div>
+        <div class="crumb">Desk telemetry &middot; <b id="crumbScope">Whole team</b></div>
+        <h1>Executive Cockpit</h1>
+      </div>
+    </div>
   <!-- VIEW SWITCHER: team or any member -->
   <section class="card scope-card">
     <div class="scope-head"><h2>Dashboard view</h2><span class="hint" style="margin:0">Team-wide, just you, or any member &mdash; every number below follows this switch</span></div>
@@ -751,6 +941,12 @@
   </div><!-- /tab-dash -->
 
   <div class="tabpane" id="tab-setup" hidden>
+    <div class="pagehead">
+      <div>
+        <div class="crumb">Mandate studio &middot; <b>Instruments, rules &amp; capital</b></div>
+        <h1>My Setup</h1>
+      </div>
+    </div>
     <div class="setup-grid">
       <section class="card">
         <h2>My instruments</h2>
@@ -808,6 +1004,12 @@
 
   <!-- ============================ ADMIN (superadmin / admin only) -->
   <div class="tabpane" id="tab-admin" hidden>
+    <div class="pagehead">
+      <div>
+        <div class="crumb">Management console &middot; <b>Access control</b></div>
+        <h1>Admin</h1>
+      </div>
+    </div>
     <section class="card card-focus">
       <div class="card-head"><h2>Create an invite code</h2><span class="hint" id="adminWho"></span></div>
       <p class="hint" style="margin:0 0 12px">Nobody can create an account without one of these. Send a code to the person, they sign in with Google (or email), then paste it on the setup screen.</p>
@@ -832,6 +1034,14 @@
     </section>
   </div><!-- /tab-admin -->
 </main>
+<footer class="telemetry">
+  <span><b>VRV</b> Terminal</span>
+  <span>Journal <b id="ftTrades">0</b> executions</span>
+  <span>Broker <b id="ftBroker">—</b></span>
+  <span>Risk plan <b id="ftRisk">—</b></span>
+  <span class="ok" id="ftState">Ready</span>
+</footer>
+
 <div id="lb" hidden><div class="lb-box"><button type="button" class="ghost small lb-x" id="lbClose">Close &#10005;</button><div id="lbBody"></div></div></div>
 <script src="/assets/app.js" defer></script>
 </body>

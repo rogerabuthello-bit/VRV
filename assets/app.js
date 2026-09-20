@@ -1123,7 +1123,7 @@ function render(){
   group('byExit',list,exitOf,'How it ended');
   group('byEmotion',list,t=>t.emotion||'Not recorded','Feeling',true);
   mistakeTable(list); ruleTable(list); riskTable(list);
-  leaderboard(); tradesTable(list);
+  leaderboard(); tradesTable(list); renderChrome();
 }
 
 // ---- improvement over time ----
@@ -1317,6 +1317,29 @@ function exportCsv(){
   setTimeout(()=>URL.revokeObjectURL(url), 1000);
 }
 $('exportCsv').onclick = exportCsv;
+
+/** Live readouts in the terminal chrome: equity, desk clock, footer telemetry. */
+function renderChrome(){
+  const list = equityInfo();
+  const main = list[0];
+  if(main){
+    $('hdrEquity').innerHTML = fmt(main.bal) + ' ' + esc(main.c)
+      + (main.dep>0 ? `<small class="${main.pnl<0?'neg':''}">${main.pnl>=0?'+':''}${fmt(main.pnl/main.dep*100,1)}%</small>` : '');
+  } else {
+    $('hdrEquity').textContent = '–';
+  }
+  $('ftTrades').textContent = ALL.filter(t=>t.trader===ME).length;
+  $('ftBroker').textContent = MYBROKER || 'none set';
+  $('ftRisk').textContent = fmt(MYRISK,2) + '% per trade';
+  const scope = $('fTrader').value;
+  if($('crumbScope')) $('crumbScope').textContent = scope==='__ALL__' ? 'Whole team' : scope;
+}
+function tickClock(){
+  const d = new Date();
+  const p = n => String(n).padStart(2,'0');
+  $('deskClock').textContent = `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())} UTC`;
+}
+setInterval(tickClock, 1000); tickClock();
 
 const LINECOL=['#8b6cff','#22d3ee','#f5c542','#ff5f6d','#2fd27b','#f472b6','#fb923c','#60a5fa','#a3e635','#c084fc'];
 function drawCurve(list){
