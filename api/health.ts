@@ -13,10 +13,16 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
  * /api/rpc serves them to the browser so it can talk to Supabase.
  */
 
-type Check = { ok: boolean; detail: string };
+type Check = { ok: boolean; detail: string; unknown?: true };
 
 const ok = (detail: string): Check => ({ ok: true, detail });
 const bad = (detail: string): Check => ({ ok: false, detail });
+/*
+ * Some things cannot be seen from outside. Reporting those as failures is
+ * worse than saying nothing: it sends people to re-do settings that were
+ * already correct. They pass, and say what they could not establish.
+ */
+const unknown = (detail: string): Check => ({ ok: true, unknown: true, detail });
 
 /** Supabase issues legacy JWT keys and the newer sb_publishable_ / sb_secret_ pair. */
 function kind(key: string): 'publishable' | 'secret' | 'legacy' | 'unknown' {
@@ -197,10 +203,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 + 'Check the client ID and secret under Authentication > Providers > Google.',
               );
             } else if (wanted.referrer === null) {
-              checks.googleRedirect = bad(
-                'Supabase handed off to Google, but its hand-off token could not be read, '
-                + 'so this check cannot tell where sign-in returns to. Test it by hand: '
-                + `open ${origin}, press "Continue with Google", and see which address you land on.`,
+              /*
+               * Newer GoTrue hands Google an opaque state string and keeps the
+               * return address server-side, so there is nothing left to read.
+               * This is not evidence of a misconfiguration - say so, rather
+               * than raising an alarm the check cannot actually justify.
+               */
+              checks.googleRedirect = unknown(
+                'Supabase handed off to Google correctly, but it no longer puts the return '
+                + 'address in the hand-off token, so this check cannot read where sign-in comes '
+                + `back to. Test it by hand: open ${origin}, press "Continue with Google", and `
+                + 'see where you land. If you end up anywhere other than this app, add '
+                + `${origin} as the Site URL and ${origin}/** under Redirect URLs in `
+                + 'Supabase > Authentication > URL Configuration.',
               );
             } else if (wanted.referrer.startsWith(origin)) {
               checks.googleRedirect = ok(`Google returns the user to ${wanted.referrer}`);
@@ -341,8 +356,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   for (const [name, c] of Object.entries(checks)) {
     if (!c.ok) next.push(`${name}: ${c.detail}`);
   }
+  for (const [name, c] of Object.entries(checks)) {
+    if (c.unknown) next.push(`${name} (could not be checked from here): ${c.detail}`);
+  }
 
-  if (origin) {
+  /*
+   * Only worth raising while Google sign-in is actually known to be landing
+   * in the wrong place. Printed unconditionally it reads as an outstanding
+   * task forever, including to someone who set it correctly an hour ago.
+   */
+  if (origin && checks.googleRedirect && !checks.googleRedirect.ok) {
     next.push(
       'In Supabase > Authentication > URL Configuration, Site URL and Redirect URLs '
       + `must include ${origin} (use your stable domain, not a per-deployment URL).`,
@@ -358,6 +381,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     ok: healthy,
     summary: healthy ? 'All checks passed.' : 'Setup is incomplete - see failing below.',
     failing: Object.entries(checks).filter(([, c]) => !c.ok).map(([k]) => k),
+    unverified: Object.entries(checks).filter(([, c]) => c.unknown).map(([k]) => k),
     checks,
     next,
   });
