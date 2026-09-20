@@ -38,6 +38,13 @@
     --grad:#00E676;          /* flat: the system rejects gradients */
     --focus:#00E676;
 
+    /* The three things that define a trade. Deliberately clear of emerald and
+       crimson, which already mean profit and loss - reusing them here would
+       make an instrument name read as a result. */
+    --c-instr:#38BDF8;   /* sky    */
+    --c-strat:#A78BFA;   /* violet */
+    --c-poi:#F472B6;     /* pink   */
+
     --g:#00E676;   /* positive / long          */
     --r:#FF334B;   /* negative / short         */
     --b:#38BDF8;   /* Good Loss, informational */
@@ -73,6 +80,10 @@
     --accent-ink:#FFFFFF;
     --grad:#00A352;
     --focus:#00A352;
+
+    --c-instr:#0369A1;
+    --c-strat:#6D28D9;
+    --c-poi:#BE185D;
 
     --g:#00834A;
     --r:#D6263C;
@@ -486,6 +497,30 @@
   }
   .fs-sub{font-size:11.5px;color:var(--mut-2)}
   .formsec .rulebox{margin-top:4px}
+
+  /* ---------------- instrument / strategy / POI markers ---------------- */
+  .vtag{
+    display:inline-block;padding:2px 7px;border-radius:2px;
+    font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:.02em;
+    border:1px solid transparent;white-space:nowrap;max-width:100%;
+    overflow:hidden;text-overflow:ellipsis;vertical-align:-1px;
+  }
+  .vtag.instr{color:var(--c-instr);background:color-mix(in srgb,var(--c-instr) 12%,transparent);border-color:color-mix(in srgb,var(--c-instr) 30%,transparent)}
+  .vtag.strat{color:var(--c-strat);background:color-mix(in srgb,var(--c-strat) 12%,transparent);border-color:color-mix(in srgb,var(--c-strat) 30%,transparent)}
+  .vtag.poi{color:var(--c-poi);background:color-mix(in srgb,var(--c-poi) 12%,transparent);border-color:color-mix(in srgb,var(--c-poi) 30%,transparent)}
+  .vtag.none{color:var(--mut-2);background:transparent;border-color:var(--line)}
+
+  /* The chips in My Setup carry the same colour as the values they become. */
+  .chips .chip.instr{color:var(--c-instr);border-color:color-mix(in srgb,var(--c-instr) 32%,var(--line))}
+  .chips .chip.poi{color:var(--c-poi);border-color:color-mix(in srgb,var(--c-poi) 32%,var(--line))}
+
+  /* A picked value colours its own field, so the three read as a set. */
+  #instr:has(option:checked:not([value=""])){color:var(--c-instr)}
+  #strat:has(option:checked:not([value=""])){color:var(--c-strat)}
+  #poi:has(option:checked:not([value=""])){color:var(--c-poi)}
+  #instr:has(option:checked:not([value=""])),
+  #strat:has(option:checked:not([value=""])),
+  #poi:has(option:checked:not([value=""])){font-weight:600}
 
   /* ---------------- preset groups ---------------- */
   .presets{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-top:11px}

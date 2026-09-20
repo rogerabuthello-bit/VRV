@@ -69,6 +69,10 @@ const fmt = (n, d=2) => (n===null||n===undefined||n===''||isNaN(n)) ? '–' : Nu
 const cls = n => n>0?'pos':(n<0?'neg':'');
 const esc = s => String(s??'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const key = s => String(s||'').replace(/\s/g,'');
+/** Renders instrument, strategy and POI in their own colour wherever they appear. */
+const vtag = (v, kind) => v
+  ? `<span class="vtag ${kind}" title="${esc(v)}">${esc(v)}</span>`
+  : '<span class="vtag none">–</span>';
 
 let ME = '', MEMBERS = [], SCOPE_TOUCHED = false;   // scope defaults to "Me" (once you have trades) until you pick a view yourself
 /* ---------------------------------------------------------------- transport
@@ -546,7 +550,7 @@ function renderSetup(){
   renderFunds(); if(!$('fdDate').value) $('fdDate').value=new Date().toISOString().slice(0,10);
   const ins=INSTR.filter(i=>i.trader===ME && (i.broker||'')===MYBROKER).map(i=>i.name).sort();
   $('myInstrList').innerHTML = ins.length
-    ? ins.map(n=>`<span class="chip">${esc(n)}<button type="button" class="chip-x" data-inst="${esc(n)}" aria-label="Remove ${esc(n)}">✕</button></span>`).join('')
+    ? ins.map(n=>`<span class="chip instr">${esc(n)}<button type="button" class="chip-x" data-inst="${esc(n)}" aria-label="Remove ${esc(n)}">✕</button></span>`).join('')
     : '<span class="hint">No instruments yet – add the markets you trade.</span>';
   $('myInstrList').querySelectorAll('[data-inst]').forEach(b=>b.onclick=()=>{
     if(!confirm('Remove '+b.dataset.inst+' from your list? Past trades are kept.')) return;
@@ -557,7 +561,7 @@ function renderSetup(){
   const ss=myStratObjs();
   $('myStratList').innerHTML = ss.length ? ss.map(s=>{
     const st=calc(ALL.filter(t=>t.trader===ME&&t.strategy===s.name));
-    return `<div class="pb-item"><div class="pb-top"><b>${esc(s.name)}</b><span class="pb-meta">${st.n} trades · ${st.winRate==null?'–':fmt(st.winRate,0)+'% win'} · <span class="${cls(st.totalR)}">${fmt(st.totalR)}R</span></span></div>
+    return `<div class="pb-item"><div class="pb-top">${vtag(s.name,'strat')}<span class="pb-meta">${st.n} trades · ${st.winRate==null?'–':fmt(st.winRate,0)+'% win'} · <span class="${cls(st.totalR)}">${fmt(st.totalR)}R</span></span></div>
       <div class="pb-desc">${esc(s.description)||'<span class="hint">No description yet</span>'}</div>
       <div class="pb-actions"><button type="button" class="ghost small" data-edit="${esc(s.name)}">Edit</button><button type="button" class="ghost small" data-del="${esc(s.name)}">Remove</button></div></div>`;
   }).join('') : '<span class="hint">No strategies yet – write your first one above.</span>';
@@ -595,7 +599,7 @@ $('poiPreset').onclick = () => {
 
 function renderPoiList(){
   $('myPoiList').innerHTML = POIS.length
-    ? POIS.map(n=>`<span class="chip">${esc(n)}<button type="button" class="chip-x" data-poi="${esc(n)}" aria-label="Remove ${esc(n)}">✕</button></span>`).join('')
+    ? POIS.map(n=>`<span class="chip poi">${esc(n)}<button type="button" class="chip-x" data-poi="${esc(n)}" aria-label="Remove ${esc(n)}">✕</button></span>`).join('')
     : '<span class="hint">No points of interest yet.</span>';
   $('myPoiList').querySelectorAll('[data-poi]').forEach(b=>b.onclick=()=>{
     const n=b.dataset.poi, used=ALL.filter(t=>t.trader===ME && t.poi===n).length;
@@ -621,7 +625,7 @@ function renderInstrSpecs(){
     .sort((a,b)=>String(a.name).localeCompare(String(b.name)));
   if(!ins.length){ $('instrSpecs').innerHTML=''; return; }
   $('instrSpecs').innerHTML='<table class="spec-tbl"><tr><th>Instrument</th><th>Pip size</th><th>Value per pip (1 lot)</th><th>Lot step</th><th>Commission / lot</th><th></th></tr>'
-    + ins.map(i=>`<tr><td><b>${esc(i.name)}</b></td>`
+    + ins.map(i=>`<tr><td>${vtag(i.name,'instr')}</td>`
         + `<td><input type="number" step="any" min="0" data-sp="pip" data-for="${esc(i.name)}" value="${i.pipSize??''}" placeholder="0.0001"></td>`
         + `<td><input type="number" step="any" min="0" data-sp="val" data-for="${esc(i.name)}" value="${i.valuePerPip??''}" placeholder="10"></td>`
         + `<td><input type="number" step="any" min="0" data-sp="step" data-for="${esc(i.name)}" value="${i.lotStep??0.01}"></td>`
@@ -1417,8 +1421,8 @@ function renderBlotter(list){
   if(!rows.length){ $('blotter').innerHTML='<span style="color:var(--mut)">No executions in this view</span>'; return; }
   $('blotter').innerHTML = '<table><tr><th>Date</th><th>Instrument</th><th>Strategy</th><th>Plan</th><th>PnL</th><th>R</th><th>Quality</th></tr>'
     + rows.map(t=>`<tr><td>${esc(t.date)}</td>`
-      + `<td>${esc(t.instrument)} <span class="pill ${t.direction==='Long'?'Win':'Loss'}">${t.direction==='Long'?'Long':'Short'}</span></td>`
-      + `<td>${esc(t.strategy)}</td><td>${t.plannedRR===''?'–':'1:'+t.plannedRR}</td>`
+      + `<td>${vtag(t.instrument,'instr')} <span class="pill ${t.direction==='Long'?'Win':'Loss'}">${t.direction==='Long'?'Long':'Short'}</span></td>`
+      + `<td>${vtag(t.strategy,'strat')}</td><td>${t.plannedRR===''?'–':'1:'+t.plannedRR}</td>`
       + `<td class="${cls(t.pnl)}">${t.pnl===''?'–':fmt(t.pnl)}</td>`
       + `<td class="${cls(t.r)}">${t.r>0?'+':''}${fmt(t.r)}R</td>`
       + `<td><span class="pill ${key(t.quality)}">${esc(t.quality)}</span></td></tr>`).join('')
@@ -1476,9 +1480,9 @@ function render(){
   drawCurve(list);
   trend(list);
   qualityDonut(s); renderDirective(list, s); renderBlotter(list);
-  group('byInstr',list,t=>t.instrument,'Instrument');
+  group('byInstr',list,t=>t.instrument,'Instrument',false,'instr');
   const allV=$('fTrader').value==='__ALL__';
-  group('byStrat',list,t=>(t.strategy||'(none)')+(allV?' · '+t.trader:''),'Strategy');
+  group('byStrat',list,t=>(t.strategy||'(none)')+(allV?' · '+t.trader:''),'Strategy',false,'strat');
   playbook();
   (function(){
     const rows = STRATS.filter(x=>$('fTrader').value==='__ALL__'||x.trader===$('fTrader').value)
@@ -1491,7 +1495,7 @@ function render(){
   group('byTrail',list,t=>t.trailed==='Yes'?'Trailed SL':'Fixed SL','Type');
   group('byExit',list,exitOf,'How it ended');
   group('byEmotion',list,t=>t.emotion||'Not recorded','Feeling',true);
-  group('byPoi',list,t=>t.poi||'Not recorded','Point of interest');
+  group('byPoi',list,t=>t.poi||'Not recorded','Point of interest',false,'poi');
   poiStrategyTable(list);
   mistakeTable(list); ruleTable(list); riskTable(list);
   leaderboard(); tradesTable(list); renderChrome();
@@ -1536,15 +1540,15 @@ function playbook(){
   const rows=STRATS.filter(s=>all||s.trader===tr).sort((a,b)=>String(a.trader).localeCompare(String(b.trader))||String(a.name).localeCompare(String(b.name)));
   $('playbook').innerHTML = rows.length ? '<div class="pb-list">'+rows.map(s=>{
     const st=calc(fl.filter(t=>t.trader===s.trader&&t.strategy===s.name));
-    return `<div class="pb-item"><div class="pb-top"><span><b>${esc(s.name)}</b>${all?`<span class="tag">${esc(s.trader)}</span>`:''}</span><span class="pb-meta">${st.n} trades · ${st.winRate==null?'–':fmt(st.winRate,0)+'% win'} · <span class="${cls(st.totalR)}">${fmt(st.totalR)}R</span> · ${st.discipline==null?'–':fmt(st.discipline,0)+'% good'}</span></div><div class="pb-desc">${esc(s.description)||'<span class="hint">No description</span>'}</div></div>`;
+    return `<div class="pb-item"><div class="pb-top"><span>${vtag(s.name,'strat')}${all?`<span class="tag">${esc(s.trader)}</span>`:''}</span><span class="pb-meta">${st.n} trades · ${st.winRate==null?'–':fmt(st.winRate,0)+'% win'} · <span class="${cls(st.totalR)}">${fmt(st.totalR)}R</span> · ${st.discipline==null?'–':fmt(st.discipline,0)+'% good'}</span></div><div class="pb-desc">${esc(s.description)||'<span class="hint">No description</span>'}</div></div>`;
   }).join('')+'</div>' : '<span style="color:var(--mut)">No strategies written yet. Add yours in the My Setup tab.</span>';
 }
 const CONF={1:'1 – Strongly disagree',2:'2 – Disagree',3:'3 – Neutral',4:'4 – Agree',5:'5 – Strongly agree'};
-function group(el,list,keyFn,title,byKey){
+function group(el,list,keyFn,title,byKey,tagKind){
   const g={}; list.forEach(t=>(g[keyFn(t)]=g[keyFn(t)]||[]).push(t));
   const rows=Object.entries(g).map(([k,v])=>({k,...calc(v)})).sort(byKey?((a,b)=>a.k<b.k?-1:1):((a,b)=>b.totalR-a.totalR));
   $(el).innerHTML=rows.length?`<table><tr><th>${title}</th><th>Trades</th><th>Win %</th><th>Total R</th><th>Avg R</th><th>Good %</th></tr>`+
-    rows.map(r=>`<tr><td>${esc(r.k)}</td><td>${r.n}</td><td>${r.winRate==null?'–':fmt(r.winRate,0)+'%'}</td><td class="${cls(r.totalR)}">${fmt(r.totalR)}</td><td class="${cls(r.avgR)}">${fmt(r.avgR)}</td><td>${fmt(r.discipline,0)}%</td></tr>`).join('')+'</table>':'<span style="color:var(--mut)">No data</span>';
+    rows.map(r=>`<tr><td>${tagKind?vtag(r.k,tagKind):esc(r.k)}</td><td>${r.n}</td><td>${r.winRate==null?'–':fmt(r.winRate,0)+'%'}</td><td class="${cls(r.totalR)}">${fmt(r.totalR)}</td><td class="${cls(r.avgR)}">${fmt(r.avgR)}</td><td>${fmt(r.discipline,0)}%</td></tr>`).join('')+'</table>':'<span style="color:var(--mut)">No data</span>';
 }
 /**
  * What each mistake actually costs. A mistake's own total R is not the answer,
@@ -1602,7 +1606,7 @@ function ruleTable(list){
   $('byRule').innerHTML = '<table><tr><th>Strategy</th><th>Rule</th><th>Kept</th><th>Avg R when kept</th><th>Avg R when broken</th><th>Difference</th></tr>'
     + rows.map(r=>{
         const d = (r.keptR==null||r.brokeR==null) ? null : r.keptR-r.brokeR;
-        return `<tr><td>${esc(r.strat)}</td><td style="white-space:normal;max-width:280px">${esc(r.rule)}</td>`
+        return `<tr><td>${vtag(r.strat,'strat')}</td><td style="white-space:normal;max-width:280px">${esc(r.rule)}</td>`
           + `<td>${r.kept}/${r.n} <span class="hint">(${fmt(r.kept/r.n*100,0)}%)</span></td>`
           + `<td class="${cls(r.keptR)}">${fmt(r.keptR)}</td><td class="${cls(r.brokeR)}">${fmt(r.brokeR)}</td>`
           + `<td class="diff ${cls(d)}">${d==null?'–':(d>0?'+':'')+fmt(d)+'R'}</td></tr>`;
@@ -1644,8 +1648,8 @@ function poiStrategyTable(list){
     .sort((a,b) => b.avgR - a.avgR);
 
   $('byPoiStrat').innerHTML = '<table><tr><th>Point of interest</th><th>Strategy</th><th>Trades</th><th>Win %</th><th>Avg R</th><th>Total R</th></tr>'
-    + rows.map((r,i)=>`<tr${i===0&&r.n>1?' class="mrow sel"':''}><td>${esc(r.poi)}${i===0&&r.n>1?' <span class="tag">best pair</span>':''}</td>`
-      + `<td>${esc(r.strat)}</td><td>${r.n}</td>`
+    + rows.map((r,i)=>`<tr${i===0&&r.n>1?' class="mrow sel"':''}><td>${vtag(r.poi,'poi')}${i===0&&r.n>1?' <span class="tag">best pair</span>':''}</td>`
+      + `<td>${vtag(r.strat,'strat')}</td><td>${r.n}</td>`
       + `<td>${r.winRate==null?'–':fmt(r.winRate,0)+'%'}</td>`
       + `<td class="${cls(r.avgR)}">${fmt(r.avgR)}</td><td class="${cls(r.totalR)}">${fmt(r.totalR)}</td></tr>`).join('')
     + '</table>';
@@ -1669,7 +1673,7 @@ function leaderboard(){
 function tradesTable(list){
   const me=$('me').value.trim().toLowerCase(), rows=[...list].reverse();
   $('tbl').innerHTML=rows.length?`<table><tr><th>Date</th><th>Time (UTC)</th><th>Time (${esc(MYTZ)})</th><th>Closed (${esc(MYTZ)})</th><th>Held</th><th>Session</th><th>Trader</th><th>Instrument</th><th>Dir</th><th>Strategy</th><th>POI</th><th>Lots</th><th>Risk</th><th>Risk %</th><th>Entry</th><th>Init SL</th><th>Final SL</th><th>Init TP</th><th>Exit</th><th>How it ended</th><th>Plan RR</th><th>R</th><th>PnL</th><th>Result</th><th>Quality</th><th>Conf</th><th>Shots</th><th>Notes</th><th></th></tr>`+
-    rows.map(t=>`<tr><td>${esc(t.date)}</td><td>${fmtIn(t.openedUtc,'UTC',false)}</td><td title="Trader's own time: ${esc(fmtIn(t.openedUtc,t.timezone||'UTC',false))} ${esc(t.timezone)}">${fmtIn(t.openedUtc,MYTZ,false)}</td><td>${t.closedUtc?fmtIn(t.closedUtc,MYTZ,false):'–'}</td><td>${fmtDur(holdMin(t))}</td><td>${esc(t.session)||'–'}</td><td>${esc(t.trader)}</td><td>${esc(t.instrument)}</td><td>${t.direction}</td><td>${esc(t.strategy)}</td><td>${esc(t.poi)||'–'}</td><td>${t.lots===''||t.lots==null?'–':fmt(t.lots,2)}</td><td>${t.risk===''||t.risk==null?'–':fmt(t.risk)}</td><td class="${t.riskPct>MYRISK*1.1?'neg':''}">${t.riskPct===''||t.riskPct==null?'–':fmt(t.riskPct,2)+'%'}</td><td>${t.entry}</td><td>${t.sl}</td><td>${t.trailed==='Yes'?t.finalSl+' ⤴':'–'}</td><td>${t.tp}</td><td>${t.exit}</td><td>${esc(exitOf(t))}</td><td>${t.plannedRR===''?'–':'1:'+t.plannedRR}</td><td class="${cls(t.r)}">${fmt(t.r)}</td><td class="${cls(t.pnl)}">${t.pnl===''?'–':fmt(t.pnl)+' '+esc(t.currency||'')}</td><td><span class="pill ${t.outcome}">${t.outcome}</span></td><td><span class="pill ${key(t.quality)}">${esc(t.quality)}</span></td><td>${miniBar(t.confidence)}</td><td class="shot-cell">${(t.shots&&t.shots.length)?`<button type="button" class="ghost small" data-view="${esc(t.shots.join(','))}">&#128247; ${t.shots.length}</button>`:''}${(String(t.trader).toLowerCase()===me&&(!t.shots||t.shots.length<MAXSHOTS))?`<button type="button" class="ghost small" data-addshot="${t.id}" title="Add screenshot">+&#128247;</button>`:''}</td><td style="white-space:normal;max-width:220px">${esc(t.notes)}</td><td class="shot-cell">${String(t.trader).toLowerCase()===me?`<button type="button" class="ghost small" data-edit-trade="${t.id}">Edit</button><button class="ghost small" onclick="del('${t.id}')">✕</button>`:''}</td></tr>`).join('')+'</table>'
+    rows.map(t=>`<tr><td>${esc(t.date)}</td><td>${fmtIn(t.openedUtc,'UTC',false)}</td><td title="Trader's own time: ${esc(fmtIn(t.openedUtc,t.timezone||'UTC',false))} ${esc(t.timezone)}">${fmtIn(t.openedUtc,MYTZ,false)}</td><td>${t.closedUtc?fmtIn(t.closedUtc,MYTZ,false):'–'}</td><td>${fmtDur(holdMin(t))}</td><td>${esc(t.session)||'–'}</td><td>${esc(t.trader)}</td><td>${vtag(t.instrument,'instr')}</td><td>${t.direction}</td><td>${vtag(t.strategy,'strat')}</td><td>${vtag(t.poi,'poi')}</td><td>${t.lots===''||t.lots==null?'–':fmt(t.lots,2)}</td><td>${t.risk===''||t.risk==null?'–':fmt(t.risk)}</td><td class="${t.riskPct>MYRISK*1.1?'neg':''}">${t.riskPct===''||t.riskPct==null?'–':fmt(t.riskPct,2)+'%'}</td><td>${t.entry}</td><td>${t.sl}</td><td>${t.trailed==='Yes'?t.finalSl+' ⤴':'–'}</td><td>${t.tp}</td><td>${t.exit}</td><td>${esc(exitOf(t))}</td><td>${t.plannedRR===''?'–':'1:'+t.plannedRR}</td><td class="${cls(t.r)}">${fmt(t.r)}</td><td class="${cls(t.pnl)}">${t.pnl===''?'–':fmt(t.pnl)+' '+esc(t.currency||'')}</td><td><span class="pill ${t.outcome}">${t.outcome}</span></td><td><span class="pill ${key(t.quality)}">${esc(t.quality)}</span></td><td>${miniBar(t.confidence)}</td><td class="shot-cell">${(t.shots&&t.shots.length)?`<button type="button" class="ghost small" data-view="${esc(t.shots.join(','))}">&#128247; ${t.shots.length}</button>`:''}${(String(t.trader).toLowerCase()===me&&(!t.shots||t.shots.length<MAXSHOTS))?`<button type="button" class="ghost small" data-addshot="${t.id}" title="Add screenshot">+&#128247;</button>`:''}</td><td style="white-space:normal;max-width:220px">${esc(t.notes)}</td><td class="shot-cell">${String(t.trader).toLowerCase()===me?`<button type="button" class="ghost small" data-edit-trade="${t.id}">Edit</button><button class="ghost small" onclick="del('${t.id}')">✕</button>`:''}</td></tr>`).join('')+'</table>'
     :'<span style="color:var(--mut)">No trades yet – log your first one above.</span>';
   $('tbl').querySelectorAll('[data-edit-trade]').forEach(b=>b.onclick=()=>startEdit(b.dataset.editTrade));
 }

@@ -211,6 +211,17 @@ Selecting **Short** on the entry form flips the accent colour red across the
 whole log pane. Only the UI accent moves; profit and loss keep their own
 tokens, so a winning short still reads green.
 
+### Reading a row at a glance
+
+The three things that define a trade each carry their own colour wherever they
+appear — instrument in sky, strategy in violet, point of interest in pink —
+across the blotter, the trades table, every breakdown, the playbook and the
+chips in My Setup. Picking one on the entry form colours that field too, so
+the set reads together.
+
+They deliberately avoid emerald and crimson, which already mean profit and
+loss. Reusing those here would make an instrument name read as a result.
+
 ### The psychology layer
 
 Performance numbers say *what* happened. These say *why*, which is the part you
