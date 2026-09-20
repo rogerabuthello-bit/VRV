@@ -729,13 +729,16 @@ function preview(){
   if(!o){ $('preview').textContent='Fill entry, initial SL and exit to preview.'; updateQuality(); return; }
   if(o.err){ $('preview').textContent='⚠ Initial SL is on the wrong side of entry.'; return; }
   if(o.plan!=null) out.push('Planned R:R 1:'+fmt(o.plan));
-  if(o.r!=null) out.push('Result '+fmt(o.r)+'R ('+o.out+')');
+  // The server rounds R to 2dp before pricing it, so preview from the same
+  // figure - otherwise the net shown here and the net saved disagree.
+  const r2 = o.r==null ? null : Math.round(o.r*100)/100;
+  if(r2!=null) out.push('Result '+fmt(r2)+'R ('+o.out+')');
   const f=$('fsl').value, s=$('sl').value;
   if(f!=='' && +f!==+s) out.push('SL trailed');
-  const c=+$('comm').value;
-  if(c>0){
-    const gross = (o.r!=null && +$('risk').value) ? o.r * +$('risk').value : null;
-    out.push(gross!=null ? `Commission ${fmt(c)} · net ${fmt(gross-c)}` : `Commission ${fmt(c)}`);
+  const c=Math.abs(+$('comm').value||0);
+  if(c){
+    const gross = (r2!=null && +$('risk').value) ? Math.round(r2 * +$('risk').value * 100)/100 : null;
+    out.push(gross!=null ? `Commission ${fmt(c)} · net ${fmt(Math.round((gross-c)*100)/100)}` : `Commission ${fmt(c)}`);
   }
   $('preview').textContent=out.join('  •  ');
   updateQuality(); updateExitHint();
@@ -1141,10 +1144,13 @@ function syncCommission(){
   const sp = specOf($('instr').value), lots = +$('lots').value;
   const rate = sp && sp.commissionPerLot > 0 ? sp.commissionPerLot : 0;
   if(!COMM_TOUCHED){
-    $('comm').value = (rate && lots > 0) ? Math.round(rate * lots * 100) / 100 : '';
+    $('comm').value = (rate && lots > 0) ? Math.round(Math.abs(rate) * lots * 100) / 100 : '';
   }
+  const typed = +$('comm').value || 0;
   $('commHint').textContent = COMM_TOUCHED
-    ? 'You set this for this trade'
+    ? (typed < 0
+        ? 'You set this — read as a cost of ' + fmt(Math.abs(typed))
+        : 'You set this for this trade')
     : rate ? fmt(rate) + ' per lot from My Setup'
            : 'No rate set for this instrument';
 }

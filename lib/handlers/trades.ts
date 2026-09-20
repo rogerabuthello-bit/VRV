@@ -157,8 +157,13 @@ async function buildTradeRow(
   const spec2 = haveInstr as { commission_per_lot?: number | null };
   const perLot = Number(spec2?.commission_per_lot) || 0;
   const typedCommission = num(t.commission);
+  /*
+   * Either sign means the same cost. Broker statements print commission as a
+   * negative, so that is what gets typed; clamping it to zero silently threw
+   * the charge away and reported a gross figure as net.
+   */
   const commission = round(
-    Math.max(0, typedCommission !== null ? typedCommission : perLot * (lots ?? 0)),
+    Math.abs(typedCommission !== null ? typedCommission : perLot * (lots ?? 0)),
     2,
   );
   const grossPnl = risk ? round(resultR * risk, 2) : null;
