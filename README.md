@@ -45,9 +45,29 @@ The dashboard, stats and charts are the same ones you already use.
 4. **Authentication → URL Configuration**: set *Site URL* to your Vercel domain
    and add it under *Redirect URLs* too (plus `http://localhost:3000` if you want
    to run it locally).
-5. **Authentication → Providers → Email**: keep it on if you want email +
-   password as well. Leave "Confirm email" on for real use — the sign-up screen
-   tells people to check their inbox.
+5. **Authentication → Providers → Email**: optional. If you enable it, read
+   the warning below first.
+
+#### Email sign-up needs your own SMTP
+
+Supabase's built-in email server is for development only. Quoting their docs:
+
+> Unless you configure a custom SMTP server for your project, Supabase Auth
+> will refuse to deliver messages to addresses that are not part of the
+> project's team.
+
+So an invited trader who signs up with an email address gets **no confirmation
+mail at all** and cannot finish signing up. There is nothing wrong with the app
+when this happens. Two ways out:
+
+- **Have people use "Continue with Google."** Google accounts arrive already
+  verified, so no email is ever sent. This is the simplest option and needs no
+  extra service.
+- **Or add custom SMTP** under Authentication → Emails → SMTP Settings, using
+  Resend, SendGrid, AWS SES or similar. Then raise the 30/hour starter limit on
+  the Rate Limits page.
+
+`/api/health` flags this whenever the email provider is enabled.
 
 #### Google OAuth client
 
@@ -131,8 +151,10 @@ Two things it cannot see, which break sign-in most often:
 
 - **Vercel Authentication must be OFF** (Vercel → Settings → Deployment
   Protection). While it is on, every `*.vercel.app` URL sits behind a Vercel
-  login wall, and the Google redirect coming back from Supabase is intercepted
-  before the page can read the `?code=` it needs.
+  login wall. Nobody outside your Vercel team can load the page at all, and the
+  Google redirect coming back from Supabase is intercepted before the page can
+  read the `?code=` it needs. This is the usual reason a trader you invited
+  reports that "Google sign-in doesn't work" — they never reached the app.
 - **Supabase Site URL / Redirect URLs must list your stable domain** — the one
   that does not change per deployment.
 

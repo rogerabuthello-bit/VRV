@@ -118,9 +118,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         checks.googleSignIn = providers.google
           ? ok('enabled')
           : bad('DISABLED - turn on Authentication > Providers > Google in Supabase');
+        /*
+         * Supabase's built-in SMTP "will refuse to deliver messages to
+         * addresses that are not part of the project's team". So email signup
+         * silently reaches nobody outside your Supabase org until a custom
+         * SMTP server is configured - which looks exactly like a broken app.
+         */
         checks.emailSignIn = providers.email
-          ? ok('enabled')
-          : bad('disabled - only Google sign-in will work');
+          ? ok('enabled - but see emailDelivery below')
+          : ok('disabled - everyone signs in with Google, which needs no email');
+        if (providers.email) {
+          checks.emailDelivery = bad(
+            'Supabase\'s built-in email only delivers to members of your Supabase '
+            + 'organisation. Anyone else gets NO confirmation mail and cannot finish '
+            + 'signing up. Either add custom SMTP under Authentication > Emails > SMTP '
+            + 'Settings, or have people use "Continue with Google", which sends no email.',
+          );
+        }
         checks.signupsAllowed = settings.disable_signup
           ? bad('signups are disabled in Supabase, so nobody new can be created')
           : ok('allowed');

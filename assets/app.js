@@ -4,7 +4,7 @@ const QUALS = ['Good Win','Bad Win','Good Loss','Bad Loss'];
 const EXITS = ['Target hit','Ran past target','Trailed stop hit','Stopped out','Manual close'];
 const MISTAKES = ['Chased entry','Entered early','No setup','Moved stop','Oversized','Closed early','Held too long','Revenge trade','Overtraded'];
 const EMOTIONS = ['Calm','Confident','FOMO','Anxious','Frustrated','Bored','Tilted','Distracted'];
-let PICKED = [], EDITING = null;                    // mistake tags, and the trade being edited
+let PICKED = [], EDITING = null, PENDING_EMAIL = '';                    // mistake tags, and the trade being edited
 let MYRISK = 1;                                     // planned risk per trade, % of equity
 const specOf = name => INSTR.find(i => i.trader===ME && i.name===name) || null;
 const hasSpec = sp => !!(sp && sp.pipSize>0 && sp.valuePerPip>0);
@@ -126,7 +126,7 @@ function lock(){
   document.body.classList.add('locked');
   document.body.classList.remove('onboarding','is-admin');
   $('aPw').value=''; $('authErr').textContent=''; $('authOk').textContent='';
-  $('obUser').value=''; $('obInv').value=''; $('obErr').textContent='';
+  $('obUser').value=''; $('obInv').value=''; $('obErr').textContent=''; PENDING_EMAIL='';
   $('msg').textContent=''; $('shotFile').value=''; SHOTS=[]; setConf(''); renderThumbs();
   $('lb').hidden=true; $('lbBody').innerHTML='';
   setMode('login');
@@ -168,6 +168,7 @@ function setMode(m){
   $('authGo').textContent    = m==='login' ? 'Log in' : 'Create account';
   $('authSwitch').textContent= m==='login' ? 'New here? Create an account' : 'Have an account? Log in';
   $('authForgot').hidden     = m!=='login';
+  $('authResend').hidden     = !PENDING_EMAIL;
   $('googleTxt').textContent = m==='login' ? 'Continue with Google' : 'Sign up with Google';
   $('aPw').autocomplete      = m==='login' ? 'current-password' : 'new-password';
   $('authNote').textContent  = m==='login'
@@ -205,8 +206,11 @@ $('authForm').onsubmit = async ev => {
       });
       if(error) throw error;
       if(!data.session){
-        $('authOk').textContent = 'Check your inbox and confirm your email, then come back and log in.';
+        PENDING_EMAIL = email;
+        $('authOk').innerHTML = 'Check your inbox and confirm your email, then come back and log in.'
+          + '<br>No email after a minute? <b>Continue with Google</b> works without one.';
         setModeSoft('login');
+        $('authResend').hidden = false;
       }
     }
   }catch(e){ $('authErr').textContent = msgOf(e); }
@@ -226,6 +230,18 @@ $('authForgot').onclick = async () => {
     if(error) throw error;
     $('authOk').textContent = 'Password reset link sent. Check your inbox.';
   }catch(e){ $('authErr').textContent = msgOf(e); }
+};
+
+$('authResend').onclick = async () => {
+  if(!PENDING_EMAIL) return;
+  $('authErr').textContent=''; $('authResend').disabled=true;
+  try{
+    const sb = await supa();
+    const { error } = await sb.auth.resend({ type:'signup', email: PENDING_EMAIL });
+    if(error) throw error;
+    $('authOk').textContent = 'Sent again to ' + PENDING_EMAIL + '. Check spam too.';
+  }catch(e){ $('authErr').textContent = msgOf(e); }
+  finally{ $('authResend').disabled=false; }
 };
 
 async function changePassword(){
