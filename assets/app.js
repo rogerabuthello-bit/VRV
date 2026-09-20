@@ -634,14 +634,26 @@ function renderInstrSpecs(){
   const ins=INSTR.filter(i=>i.trader===ME && (i.broker||'')===MYBROKER)
     .sort((a,b)=>String(a.name).localeCompare(String(b.name)));
   if(!ins.length){ $('instrSpecs').innerHTML=''; return; }
-  $('instrSpecs').innerHTML='<table class="spec-tbl"><tr><th>Instrument</th><th>Pip size</th><th>Value per pip (1 lot)</th><th>Lot step</th><th>Commission / lot</th><th></th></tr>'
-    + ins.map(i=>`<tr><td>${vtag(i.name,'instr')}</td>`
-        + `<td><input type="number" step="any" min="0" data-sp="pip" data-for="${esc(i.name)}" value="${i.pipSize??''}" placeholder="0.0001"></td>`
-        + `<td><input type="number" step="any" min="0" data-sp="val" data-for="${esc(i.name)}" value="${i.valuePerPip??''}" placeholder="10"></td>`
-        + `<td><input type="number" step="any" min="0" data-sp="step" data-for="${esc(i.name)}" value="${i.lotStep??0.01}"></td>`
-        + `<td><input type="number" step="any" min="0" data-sp="comm" data-for="${esc(i.name)}" value="${i.commissionPerLot??0}"></td>`
-        + `<td><button type="button" class="ghost small" data-spsave="${esc(i.name)}">Save</button> <span class="hint" data-spmsg="${esc(i.name)}"></span></td></tr>`).join('')
-    + '</table>';
+  /*
+   * One block per instrument rather than one wide row. The five fields used
+   * to run off the side of the column, which put Save behind a sideways
+   * scroll - easy to miss, so edits were being typed and then lost.
+   */
+  const fld=(i,n,k,lbl,val,ph)=>`<div><label for="sp-${k}-${n}">${lbl}</label>`
+    + `<input id="sp-${k}-${n}" type="number" step="any" min="0" data-sp="${k}" `
+    + `data-for="${esc(i.name)}" value="${val??''}"${ph?` placeholder="${ph}"`:''}></div>`;
+  $('instrSpecs').innerHTML='<div class="spec-list">'
+    + ins.map((i,n)=>`<div class="spec-card">`
+        + `<div class="spec-top">${vtag(i.name,'instr')}`
+        + `<span><button type="button" class="ghost small" data-spsave="${esc(i.name)}">Save</button> `
+        + `<span class="spec-msg" data-spmsg="${esc(i.name)}"></span></span></div>`
+        + `<div class="spec-grid">`
+        + fld(i,n,'pip','Pip size',i.pipSize,'0.0001')
+        + fld(i,n,'val','Value / pip',i.valuePerPip,'10')
+        + fld(i,n,'step','Lot step',i.lotStep??0.01,'')
+        + fld(i,n,'comm','Commission / lot',i.commissionPerLot??0,'')
+        + `</div></div>`).join('')
+    + '</div>';
   $('instrSpecs').querySelectorAll('[data-spsave]').forEach(b=>b.onclick=()=>{
     const n=b.dataset.spsave, pick=k=>$('instrSpecs').querySelector(`[data-sp="${k}"][data-for="${CSS.escape(n)}"]`).value;
     const msg=$('instrSpecs').querySelector(`[data-spmsg="${CSS.escape(n)}"]`);
@@ -715,19 +727,49 @@ $('stSave').onclick=()=>{
 };
 
 // ---- live preview & quality options ----
+/**
+ * The prices only make sense read against the direction: a long stops out
+ * below and targets above, a short the other way round. Checking it here
+ * means the form says so while it is being typed, rather than the server
+ * rejecting the trade after everything else has been filled in.
+ */
+function dirProblem(){
+  const dir=$('dir').value, e=+$('entry').value, s=+$('sl').value, tp=$('tp').value;
+  if($('entry').value==='' || isNaN(e)) return null;
+  const long = dir!=='Short', side = long?'above':'below', other = long?'below':'above';
+  if($('sl').value!=='' && !isNaN(s) && (long ? s>=e : s<=e)){
+    return {msg:`${dir}: the initial stop must be ${other} the entry.`, bad:['sl']};
+  }
+  if(tp!=='' && !isNaN(+tp) && (long ? +tp<=e : +tp>=e)){
+    return {msg:`${dir}: the take profit must be ${side} the entry.`, bad:['tp']};
+  }
+  return null;
+}
 function calcLive(){
   const e=+$('entry').value, s=+$('sl').value, x=$('exit').value, tp=$('tp').value, dir=$('dir').value;
   if(!$('entry').value || !$('sl').value) return null;
-  if((dir==='Long'&&s>=e)||(dir==='Short'&&s<=e)) return {err:true};
+  const bad=dirProblem();
+  if(bad) return {err:bad.msg};
   const d=e-s, o={};
   if(tp!=='') o.plan=Math.abs(+tp-e)/Math.abs(d);
   if(x!==''){ o.r=(+x-e)/d; o.out=o.r>0.05?'Win':o.r<-0.05?'Loss':'BE'; }
   return o;
 }
+/** Rings the field that is on the wrong side, so the message has a target. */
+function markDirFields(){
+  const bad=dirProblem(), set=new Set(bad?bad.bad:[]);
+  ['sl','tp'].forEach(id=>$(id).classList.toggle('bad', set.has(id)));
+  return bad;
+}
 function preview(){
-  const o=calcLive(); const out=[];
+  const out=[];
+  // A price on the wrong side is worth saying before anything else, and is
+  // worth saying even while the rest of the form is still blank.
+  const wrongWay=markDirFields();
+  $('preview').classList.toggle('bad-note', !!wrongWay);
+  if(wrongWay){ $('preview').textContent='\u26a0 '+wrongWay.msg; updateQuality(); return; }
+  const o=calcLive();
   if(!o){ $('preview').textContent='Fill entry, initial SL and exit to preview.'; updateQuality(); return; }
-  if(o.err){ $('preview').textContent='⚠ Initial SL is on the wrong side of entry.'; return; }
   if(o.plan!=null) out.push('Planned R:R 1:'+fmt(o.plan));
   // The server rounds R to 2dp before pricing it, so preview from the same
   // figure - otherwise the net shown here and the net saved disagree.
@@ -1198,10 +1240,63 @@ function updateQuality(){
   if(opts.includes(cur)) $('quality').value=cur;
 }
 
+/* ------------------------------------------------------------------
+ * Balance tally. After a trade is logged the account is the thing the
+ * trader actually cares about, so it is counted from the old figure to
+ * the new one in the middle of the screen - green if the trade added,
+ * red if it took away.
+ * ---------------------------------------------------------------- */
+let TALLY_TIMER = null, TALLY_RAF = null;
+function hideTally(){
+  clearTimeout(TALLY_TIMER); cancelAnimationFrame(TALLY_RAF);
+  TALLY_TIMER = null; TALLY_RAF = null;
+  $('tally').hidden = true;
+}
+$('tally').onclick = hideTally;
+document.addEventListener('keydown', e => { if(e.key==='Escape' && !$('tally').hidden) hideTally(); });
+
+function showTally(from, to, ccy){
+  const delta = to - from;
+  // Nothing moved, so there is nothing worth interrupting the screen for.
+  if(Math.abs(delta) < 0.005) return;
+  const el = $('tally');
+  hideTally();
+  el.classList.toggle('pos', delta >= 0);
+  el.classList.toggle('neg', delta < 0);
+  $('tallyLbl').textContent = 'Balance' + (ccy ? ' \u00b7 ' + ccy : '');
+  $('tallyDelta').textContent = (delta >= 0 ? '+' : '\u2212') + fmt(Math.abs(delta));
+  // Paint the starting figure before the first frame, so the panel never
+  // opens on the placeholder dash.
+  $('tallyNum').textContent = fmt(from);
+  el.hidden = false;
+
+  const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const land = () => { $('tallyNum').textContent = fmt(to); TALLY_TIMER = setTimeout(hideTally, 2400); };
+  if(still){ land(); return; }
+
+  const ms = 900, t0 = performance.now();
+  const step = now => {
+    const p = Math.min(1, (now - t0) / ms);
+    // Fast out of the gate, settling onto the final figure.
+    const e = 1 - Math.pow(1 - p, 3);
+    $('tallyNum').textContent = fmt(from + delta * e);
+    if(p < 1) TALLY_RAF = requestAnimationFrame(step); else land();
+  };
+  TALLY_RAF = requestAnimationFrame(step);
+}
+
 $('add').onclick = () => {
   const t={broker:brokerOf(),date:$('date').value,time:$('ttime').value,closeTime:$('xtime').value,closeDate:$('xdate').value,timezone:$('tz').value,currency:$('ccy').value,session:$('sess').value,instrument:$('instr').value,strategy:$('strat').value,direction:$('dir').value,
     entry:$('entry').value,sl:$('sl').value,finalSl:$('fsl').value,tp:$('tp').value,exit:$('exit').value,
     risk:$('risk').value,lots:$('lots').value,commission:$('comm').value,confidence:$('conf').value,mistakes:PICKED,emotion:$('emotion').value,rulesFollowed:checkedRules(),poi:$('poi').value,exitReason:$('xreason').value,shots:SHOTS,quality:$('quality').value,notes:$('notes').value};
+  const wrongWay=markDirFields();
+  if(wrongWay){
+    $('msg').textContent='⚠ '+wrongWay.msg;
+    $(wrongWay.bad[0]).focus();
+    return;
+  }
+  // Read the balance before the trade lands, so the tally has somewhere to count from.
+  const tallyCcy = $('ccy').value, balBefore = equityIn(tallyCcy);
   $('add').disabled=true; $('msg').textContent=SHOTS.length?'Uploading screenshots…':'Saving…';
   const saving = EDITING
     ? api('updateTrade', EDITING, t)
@@ -1211,7 +1306,8 @@ $('add').onclick = () => {
     const verb = EDITING ? 'Updated' : 'Saved';
     if(EDITING) endEdit();
     $('msg').textContent=`${verb}: ${r.outcome} ${fmt(r.r)}R${r.trailed==='Yes'?' (trailed)':''} · ${r.session}`;
-    ['entry','sl','fsl','tp','exit','risk','lots','comm','notes'].forEach(i=>$(i).value=''); COMM_TOUCHED=false; $('quality').value=''; $('ttime').value=''; $('xtime').value=''; $('xdate').value=''; $('xreason').value=''; $('emotion').value=''; $('sess').value=''; fillPois(''); PICKED=[]; renderMistakes(); renderRules(); setConf(''); SHOTS=[]; renderThumbs(); preview(); tzPreview(); load().catch(fail);
+    ['entry','sl','fsl','tp','exit','risk','lots','comm','notes'].forEach(i=>$(i).value=''); COMM_TOUCHED=false; $('quality').value=''; $('ttime').value=''; $('xtime').value=''; $('xdate').value=''; $('xreason').value=''; $('emotion').value=''; $('sess').value=''; fillPois(''); PICKED=[]; renderMistakes(); renderRules(); setConf(''); SHOTS=[]; renderThumbs(); preview(); tzPreview();
+    load().then(()=>showTally(balBefore, equityIn(tallyCcy), tallyCcy)).catch(fail);
   }).catch(e=>{ $('add').disabled=false; const m=(e&&e.message)||String(e); if(/AUTH/.test(m)) return fail(e); $('msg').textContent='Error: '+m; });
 };
 function startEdit(id){
@@ -1711,8 +1807,14 @@ function leaderboard(){
 }
 function tradesTable(list){
   const me=$('me').value.trim().toLowerCase(), rows=[...list].reverse();
-  $('tbl').innerHTML=rows.length?`<table><tr><th>Date</th><th>Time (UTC)</th><th>Time (${esc(MYTZ)})</th><th>Closed (${esc(MYTZ)})</th><th>Held</th><th>Session</th><th>Trader</th><th>Instrument</th><th>Dir</th><th>Strategy</th><th>POI</th><th>Lots</th><th>Risk</th><th>Risk %</th><th>Entry</th><th>Init SL</th><th>Final SL</th><th>Init TP</th><th>Exit</th><th>How it ended</th><th>Plan RR</th><th>R</th><th>PnL</th><th>Result</th><th>Quality</th><th>Conf</th><th>Shots</th><th>Notes</th><th></th></tr>`+
-    rows.map(t=>`<tr><td>${esc(t.date)}</td><td>${fmtIn(t.openedUtc,'UTC',false)}</td><td title="Trader's own time: ${esc(fmtIn(t.openedUtc,t.timezone||'UTC',false))} ${esc(t.timezone)}">${fmtIn(t.openedUtc,MYTZ,false)}</td><td>${t.closedUtc?fmtIn(t.closedUtc,MYTZ,false):'–'}</td><td>${fmtDur(holdMin(t))}</td><td>${esc(t.session)||'–'}</td><td>${esc(t.trader)}</td><td>${vtag(t.instrument,'instr')}</td><td>${t.direction}</td><td>${vtag(t.strategy,'strat')}</td><td>${vtag(t.poi,'poi')}</td><td>${t.lots===''||t.lots==null?'–':fmt(t.lots,2)}</td><td>${t.risk===''||t.risk==null?'–':fmt(t.risk)}</td><td class="${t.riskPct>MYRISK*1.1?'neg':''}">${t.riskPct===''||t.riskPct==null?'–':fmt(t.riskPct,2)+'%'}</td><td>${t.entry}</td><td>${t.sl}</td><td>${t.trailed==='Yes'?t.finalSl+' ⤴':'–'}</td><td>${t.tp}</td><td>${t.exit}</td><td>${esc(exitOf(t))}</td><td>${t.plannedRR===''?'–':'1:'+t.plannedRR}</td><td class="${cls(t.r)}">${fmt(t.r)}</td><td class="${cls(t.pnl)}">${t.pnl===''?'–':fmt(t.pnl)+' '+esc(t.currency||'')}</td><td><span class="pill ${t.outcome}">${t.outcome}</span></td><td><span class="pill ${key(t.quality)}">${esc(t.quality)}</span></td><td>${miniBar(t.confidence)}</td><td class="shot-cell">${(t.shots&&t.shots.length)?`<button type="button" class="ghost small" data-view="${esc(t.shots.join(','))}">&#128247; ${t.shots.length}</button>`:''}${(String(t.trader).toLowerCase()===me&&(!t.shots||t.shots.length<MAXSHOTS))?`<button type="button" class="ghost small" data-addshot="${t.id}" title="Add screenshot">+&#128247;</button>`:''}</td><td style="white-space:normal;max-width:220px">${esc(t.notes)}</td><td class="shot-cell">${String(t.trader).toLowerCase()===me?`<button type="button" class="ghost small" data-edit-trade="${t.id}">Edit</button><button class="ghost small" onclick="del('${t.id}')">✕</button>`:''}</td></tr>`).join('')+'</table>'
+  $('tbl').innerHTML=rows.length?`<table><tr><th>Date</th><th>Time (UTC)</th><th>Time (${esc(MYTZ)})</th><th>Closed (${esc(MYTZ)})</th><th>Held</th><th>Session</th><th>Trader</th><th>Instrument</th><th>Dir</th><th>Strategy</th><th>POI</th><th>Lots</th><th>Risk</th><th>Risk %</th><th>Entry</th><th>Init SL</th><th>Final SL</th><th>Init TP</th><th>Exit</th><th>How it ended</th><th>Plan RR</th><th>R</th><th>PnL</th><th>Result</th><th>Quality</th><th>Conf</th><th>Shots</th><th></th></tr>`+
+    rows.map(t=>`<tr class="${t.notes?'has-note':''}"><td>${esc(t.date)}</td><td>${fmtIn(t.openedUtc,'UTC',false)}</td><td title="Trader's own time: ${esc(fmtIn(t.openedUtc,t.timezone||'UTC',false))} ${esc(t.timezone)}">${fmtIn(t.openedUtc,MYTZ,false)}</td><td>${t.closedUtc?fmtIn(t.closedUtc,MYTZ,false):'–'}</td><td>${fmtDur(holdMin(t))}</td><td>${esc(t.session)||'–'}</td><td>${esc(t.trader)}</td><td>${vtag(t.instrument,'instr')}</td><td>${t.direction}</td><td>${vtag(t.strategy,'strat')}</td><td>${vtag(t.poi,'poi')}</td><td>${t.lots===''||t.lots==null?'–':fmt(t.lots,2)}</td><td>${t.risk===''||t.risk==null?'–':fmt(t.risk)}</td><td class="${t.riskPct>MYRISK*1.1?'neg':''}">${t.riskPct===''||t.riskPct==null?'–':fmt(t.riskPct,2)+'%'}</td><td>${t.entry}</td><td>${t.sl}</td><td>${t.trailed==='Yes'?t.finalSl+' ⤴':'–'}</td><td>${t.tp}</td><td>${t.exit}</td><td>${esc(exitOf(t))}</td><td>${t.plannedRR===''?'–':'1:'+t.plannedRR}</td><td class="${cls(t.r)}">${fmt(t.r)}</td><td class="${cls(t.pnl)}">${t.pnl===''?'–':fmt(t.pnl)+' '+esc(t.currency||'')}</td><td><span class="pill ${t.outcome}">${t.outcome}</span></td><td><span class="pill ${key(t.quality)}">${esc(t.quality)}</span></td><td>${miniBar(t.confidence)}</td><td class="shot-cell">${(t.shots&&t.shots.length)?`<button type="button" class="ghost small" data-view="${esc(t.shots.join(','))}">&#128247; ${t.shots.length}</button>`:''}${(String(t.trader).toLowerCase()===me&&(!t.shots||t.shots.length<MAXSHOTS))?`<button type="button" class="ghost small" data-addshot="${t.id}" title="Add screenshot">+&#128247;</button>`:''}</td><td class="shot-cell">${String(t.trader).toLowerCase()===me?`<button type="button" class="ghost small" data-edit-trade="${t.id}">Edit</button><button class="ghost small" onclick="del('${t.id}')">✕</button>`:''}</td></tr>`
+      /*
+       * The note gets its own full-width line under the trade instead of a
+       * 220px column squeezed between Shots and the buttons. It sticks to the
+       * left edge so it stays readable however far the table is scrolled.
+       */
+      + (t.notes ? `<tr class="note-row"><td colspan="28"><div class="note-in"><b>Note</b> ${esc(t.notes)}</div></td></tr>` : '')).join('')+'</table>'
     :'<span style="color:var(--mut)">No trades yet – log your first one above.</span>';
   $('tbl').querySelectorAll('[data-edit-trade]').forEach(b=>b.onclick=()=>startEdit(b.dataset.editTrade));
 }

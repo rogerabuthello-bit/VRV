@@ -120,8 +120,20 @@ async function buildTradeRow(
   if (entry === null || sl === null || exit === null) {
     throw new AppError('Entry, Initial SL and Exit must be numbers.');
   }
+  /*
+   * A stop below entry on a short, or a target below entry on a long, is a
+   * typed-in-the-wrong-box mistake, not a trade. Left alone it produces a
+   * negative planned R:R and an R measured against an inverted risk, which
+   * poisons every average built on top of it - so it is refused outright.
+   */
   if (direction === 'Long' && sl >= entry) throw new AppError('Long: Initial SL must be below Entry.');
   if (direction === 'Short' && sl <= entry) throw new AppError('Short: Initial SL must be above Entry.');
+  if (tp !== null && direction === 'Long' && tp <= entry) {
+    throw new AppError('Long: Take profit must be above Entry.');
+  }
+  if (tp !== null && direction === 'Short' && tp >= entry) {
+    throw new AppError('Short: Take profit must be below Entry.');
+  }
   if (finalSl === null) finalSl = sl;
   const slTrailed = finalSl !== sl;
 

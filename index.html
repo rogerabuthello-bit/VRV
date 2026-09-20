@@ -650,7 +650,69 @@
 
   .stat.lead{border-color:color-mix(in srgb,var(--accent-2) 55%,var(--line));background:color-mix(in srgb,var(--accent-2) 10%,var(--inset))}
   .stat.lead .v{color:var(--accent-2)}
-  .spec-tbl input{padding:6px 8px;font-size:13px;width:110px}
+
+  /* ---- a price typed on the wrong side of the entry ---- */
+  input.bad, input.bad:focus{
+    border-color:var(--r);
+    background:color-mix(in srgb,var(--r) 9%,var(--inset));
+    box-shadow:0 0 0 2px color-mix(in srgb,var(--r) 22%,transparent);
+  }
+  #preview.bad-note{color:var(--r)}
+
+  /* ---- instrument specs: one block per instrument, so nothing scrolls
+         sideways and the Save button is always where the fields are ---- */
+  .spec-list{display:grid;gap:10px;margin-top:14px}
+  .spec-card{
+    border:1px solid var(--line);border-radius:var(--radius-sm);
+    background:var(--card-2);padding:10px 12px;
+  }
+  .spec-card .spec-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+  .spec-grid{display:grid;gap:9px;grid-template-columns:repeat(auto-fit,minmax(118px,1fr))}
+  .spec-grid label{
+    display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--mut-2);font-weight:600;margin-bottom:4px;
+  }
+  .spec-grid input{padding:6px 8px;font-size:13px;width:100%}
+  .spec-card .spec-msg{font-size:12px;color:var(--mut)}
+
+  /* ---- the note a trade was logged with, on its own line under it ---- */
+  tr.note-row td{border-top:0;padding-top:0;padding-bottom:10px}
+  .note-in{
+    position:sticky;left:0;max-width:min(760px,86vw);
+    white-space:normal;color:var(--mut);font-size:12.5px;line-height:1.45;
+    display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;
+    border-left:2px solid var(--line);padding-left:9px;
+  }
+  .note-in b{color:var(--mut-2);font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+  tr.has-note td{border-bottom:0}
+
+  /* ---- balance tally shown after a trade is logged ---- */
+  #tally{
+    position:fixed;inset:0;z-index:60;display:grid;place-items:center;
+    background:color-mix(in srgb,var(--bg) 72%,transparent);
+    backdrop-filter:blur(3px);cursor:pointer;
+  }
+  #tally[hidden]{display:none}
+  .tally-box{text-align:center;padding:26px 34px;animation:tally-in .22s ease-out both}
+  .tally-lbl{
+    font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--mut-2);font-weight:700;margin-bottom:10px;
+  }
+  .tally-num{
+    font-family:var(--font-mono);font-variant-numeric:tabular-nums;
+    font-size:clamp(38px,9vw,74px);font-weight:700;line-height:1;
+    color:var(--txt-strong);
+  }
+  .tally-delta{
+    margin-top:12px;font-family:var(--font-mono);font-variant-numeric:tabular-nums;
+    font-size:clamp(15px,3.2vw,21px);font-weight:700;letter-spacing:.02em;
+  }
+  #tally.pos .tally-num,#tally.pos .tally-delta{color:var(--g)}
+  #tally.neg .tally-num,#tally.neg .tally-delta{color:var(--r)}
+  @keyframes tally-in{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){
+    .tally-box{animation:none}
+  }
 
   /* ---------------- admin ---------------- */
   .tab.admin-tab{display:none}
@@ -1232,7 +1294,7 @@
         <div class="presets" id="instrPresets"></div>
         <div class="hint" id="setInstrMsg"></div>
         <div class="chips" id="myInstrList"></div>
-        <div class="scroll" id="instrSpecs" style="margin-top:14px"></div>
+        <div id="instrSpecs"></div>
         <div class="hint" style="margin-top:8px">One pip on one lot. A standard FX lot is usually pip size <b>0.0001</b> and <b>10</b> per pip (JPY pairs use <b>0.01</b>). Check your broker &mdash; it decides these, not us.</div>
       </section>
       <section class="card">
@@ -1322,6 +1384,14 @@
   <span class="ok" id="ftState">Ready</span>
 </footer>
 
+<!-- Balance tally: the account moving, shown once, after a trade is logged. -->
+<div id="tally" hidden aria-live="polite">
+  <div class="tally-box" role="status">
+    <div class="tally-lbl" id="tallyLbl">Balance</div>
+    <div class="tally-num" id="tallyNum">&ndash;</div>
+    <div class="tally-delta" id="tallyDelta"></div>
+  </div>
+</div>
 <div id="lb" hidden><div class="lb-box"><button type="button" class="ghost small lb-x" id="lbClose">Close &#10005;</button><div id="lbBody"></div></div></div>
 <script src="/assets/app.js" defer></script>
 </body>
