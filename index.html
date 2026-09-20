@@ -436,6 +436,37 @@
   .dirbtn.short:hover,.dirbtn.short.on{background:color-mix(in srgb,var(--r) 20%,var(--inset));border-color:var(--r);color:var(--r)}
   .dirbtn.on{box-shadow:inset 0 0 0 1px currentColor}
 
+  /* ---------------- header: brand left, nav right ---------------- */
+  header{align-items:flex-start;padding:12px 20px 10px}
+  .brand-block{display:flex;flex-direction:column;gap:9px;min-width:0}
+  .brand-tele{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+  .head-tools{align-items:center;gap:10px;flex:1;justify-content:flex-end}
+  header .tabs{border-bottom:0;margin:0;flex-wrap:wrap;justify-content:flex-end}
+  header .tab{padding:8px 13px;border-radius:var(--radius-sm);border-bottom-width:2px}
+  main{padding-top:18px}
+  @media (max-width:980px){
+    header{flex-direction:column;align-items:stretch}
+    .head-tools{justify-content:flex-start}
+    header .tabs{justify-content:flex-start}
+  }
+  @media (max-width:760px){
+    .brand-tele{display:flex}
+    .equity-tile{display:flex}
+    .deskline{display:none}
+    header .tab{padding:8px 10px;font-size:12px}
+  }
+
+  /* ---------------- short side turns the accent red ----------------
+     Only the UI accent flips. Profit and loss keep their own tokens, so a
+     winning short still reads green. */
+  body.dir-short #tab-journal{
+    --accent:#FF334B;
+    --accent-strong:#EF4444;
+    --accent-ink:#05070A;
+    --focus:#FF334B;
+  }
+  body.dir-short #tab-journal .fs-n{color:#FF334B}
+
   /* ---------------- numbered form sections ---------------- */
   .formsec{
     padding:14px 0 2px;border-top:1px solid var(--line);margin-top:18px;
@@ -815,20 +846,29 @@
   </form>
 </div>
 <header>
+  <div class="brand-block">
   <div class="brand">
     <span class="logo" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke-linecap="round" stroke-linejoin="round"><defs><linearGradient id="vg" x1="4" y1="6" x2="28" y2="26" gradientUnits="userSpaceOnUse"><stop stop-color="#a48cff"/><stop offset="1" stop-color="#6a48f2"/></linearGradient></defs><path d="M5 8l11 17L27 8" stroke="url(#vg)" stroke-width="4.2"/><path d="M11 8l5 8 5-8" stroke="#22d3ee" stroke-width="3"/></svg></span>
     <div class="wordmark" role="img" aria-label="VRV Terminal"><b>VRV<i>TERMINAL</i></b><small>Institutional Core</small></div>
-    <div class="deskline" id="deskLine"><span class="dot" aria-hidden="true"></span><span id="deskClock">--:--:-- UTC</span></div>
   </div>
-  <div class="head-tools">
+  <div class="brand-tele">
     <div class="equity-tile" title="Your current equity in your base currency">
       <span class="l">Equity</span>
       <span class="v" id="hdrEquity">–<small id="hdrEquityDelta"></small></span>
     </div>
-    <div class="field head-name">
-      <label for="me">Trader</label>
-      <input id="me" readonly tabindex="-1">
-    </div>
+    <div class="deskline" id="deskLine"><span class="dot" aria-hidden="true"></span><span id="deskClock">--:--:-- UTC</span></div>
+  </div>
+  </div>
+  <div class="head-tools">
+  <nav class="tabs" role="tablist">
+    <button class="tab" type="button" data-tab="journal" role="tab">Log Trade</button>
+    <button class="tab on" type="button" data-tab="dash" role="tab">Dashboard</button>
+    <button class="tab" type="button" data-tab="risk" role="tab">Risk &amp; Calendar</button>
+    <button class="tab" type="button" data-tab="setup" role="tab">My Setup</button>
+    <button class="tab admin-tab" type="button" data-tab="admin" role="tab">Admin</button>
+  </nav>
+    <span class="who-chip" title="Signed in"><b id="meName"></b></span>
+    <input id="me" type="hidden">
     <button class="ghost small" id="logout" type="button">Log out</button>
     <div class="theme-switch">
       <input type="checkbox" id="themeToggle" aria-label="Toggle light or dark theme">
@@ -841,13 +881,6 @@
 </header>
 
 <main>
-  <nav class="tabs" role="tablist">
-    <button class="tab" type="button" data-tab="journal" role="tab">Log Trade</button>
-    <button class="tab on" type="button" data-tab="dash" role="tab">Dashboard</button>
-    <button class="tab" type="button" data-tab="risk" role="tab">Risk &amp; Calendar</button>
-    <button class="tab" type="button" data-tab="setup" role="tab">My Setup</button>
-    <button class="tab admin-tab" type="button" data-tab="admin" role="tab">Admin</button>
-  </nav>
 
   <div class="tabpane" id="tab-journal" hidden>
     <div class="pagehead">
@@ -1103,6 +1136,8 @@
 
   <section class="card card-focus"><h2>What your mistakes cost</h2><div class="scroll" id="byMistake"></div></section>
 
+  <section class="card card-focus"><h2>Which POI works with which strategy</h2><div class="scroll" id="byPoiStrat"></div></section>
+
   <section class="card card-quality"><h2>Rule adherence</h2><div class="scroll" id="byRule"></div></section>
 
 
@@ -1176,7 +1211,6 @@
         <h2>Add / edit a strategy</h2>
         <div class="field"><label for="stName">Strategy name</label><input id="stName" placeholder="e.g. London breakout" autocomplete="off"></div>
         <div class="field" style="margin-top:12px"><label for="stDesc">Description (your rules: entry, stop, target, when NOT to trade)</label><textarea id="stDesc" rows="5" placeholder="Write the rules you promise to follow. &quot;Good&quot; trades = you followed these."></textarea></div>
-        <div class="field" style="margin-top:12px"><label for="stPois">Points of interest (one per line)</label><textarea id="stPois" rows="4" placeholder="Order block&#10;Fair value gap&#10;Liquidity sweep&#10;Daily level"></textarea><div class="hint">The levels this model trades. You pick one when logging, so you can see which actually pay.</div></div>
         <div class="field" style="margin-top:12px"><label for="stRules">Rules checklist (one per line)</label><textarea id="stRules" rows="5" placeholder="Waited for the setup to complete&#10;Risked no more than my plan&#10;Did not move my stop"></textarea><div class="hint">You tick these off when logging a trade, so discipline gets measured instead of guessed.</div></div>
         <div class="entry-actions"><button id="stSave" type="button">Save strategy</button><span class="hint">Saving with an existing name updates its description.</span></div>
       </section>
@@ -1208,6 +1242,14 @@
           <div class="hint" id="setTzMsg">Every trade is also stored in UTC so trades from different countries line up. Daylight saving? Change the offset when your clocks change.</div></div>
       </div>
     </section>
+    <section class="card">
+      <h2>Points of interest</h2>
+      <p class="hint" style="margin-top:0">The levels and structures you trade. Tag one on every trade and the dashboard shows which pay, and which strategy they pay with.</p>
+      <div class="add-inline" style="margin-top:0"><input id="newPoi" maxlength="80" placeholder="e.g. Order block, Fair value gap" aria-label="New point of interest"><button id="addPoi" type="button">Add POI</button></div>
+      <div class="chips" id="myPoiList"></div>
+      <div class="hint" id="poiMsg"></div>
+    </section>
+
     <section class="card"><h2>My strategies</h2><div class="pb-list" id="myStratList"></div></section>
   </div><!-- /tab-setup -->
 

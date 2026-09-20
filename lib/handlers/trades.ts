@@ -100,7 +100,7 @@ async function buildTradeRow(
   const [{ data: haveInstr }, { data: haveStrat }] = await Promise.all([
     supabase.from('instruments').select('id, pip_size, value_per_pip')
       .eq('user_id', who.id).eq('name', instrument).eq('broker', broker).maybeSingle(),
-    supabase.from('strategies').select('name, rules, pois').eq('user_id', who.id).eq('name', strategy).maybeSingle(),
+    supabase.from('strategies').select('name, rules').eq('user_id', who.id).eq('name', strategy).maybeSingle(),
   ]);
   if (!haveInstr) {
     throw new AppError(
@@ -217,11 +217,11 @@ async function buildTradeRow(
     : [];
   const rulesFollowed = pickFrom(t.rulesFollowed, stratRules);
 
-  // A point of interest only means something inside the strategy that reads it.
-  const stratPois: string[] = Array.isArray((haveStrat as { pois?: string[] }).pois)
-    ? (haveStrat as { pois: string[] }).pois
+  // Checked against the trader's own library, so any POI can pair with any strategy.
+  const myPois: string[] = Array.isArray((who.profile as unknown as { pois?: string[] }).pois)
+    ? (who.profile as unknown as { pois: string[] }).pois
     : [];
-  const poi = pickFrom([t.poi], stratPois)[0] ?? null;
+  const poi = pickFrom([t.poi], myPois)[0] ?? null;
 
   const row: Record<string, unknown> = {
       trade_date: date,

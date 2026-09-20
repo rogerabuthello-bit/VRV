@@ -69,6 +69,7 @@ export async function getBootstrap(bearer: string | undefined) {
     riskPct: (me as unknown as { default_risk_pct?: number }).default_risk_pct ?? 1,
     broker: (me as unknown as { active_broker?: string }).active_broker || '',
     brokers: (me as unknown as { brokers?: string[] }).brokers || [],
+    pois: (me as unknown as { pois?: string[] }).pois || [],
     members: memberRows.map((r) => r.username).filter(Boolean).sort(),
     funds: fundRows.map((f) => ({
       id: f.id,
@@ -335,6 +336,48 @@ export async function removeBroker(bearer: string | undefined, raw: unknown) {
   const { error } = await supabase.from('users').update(patch).eq('id', who.id);
   if (error) throw brokerColumnError(error.message) || new AppError(error.message, 500);
   return { brokers, active: (patch.active_broker as string) ?? active ?? '' };
+}
+
+/**
+ * The points of interest this trader watches. Kept on the trader rather than
+ * the strategy: the same level gets read by several models, and which POI
+ * works with which strategy is only answerable once the two vary separately.
+ */
+export async function addPoi(bearer: string | undefined, raw: unknown) {
+  const who = await requireProfile(bearer);
+  const name = String(raw || '').trim().slice(0, 80);
+  if (!name) throw new AppError('Give the point of interest a name.');
+
+  const list = await poiList(who.id);
+  if (list.some((v) => v.toLowerCase() === name.toLowerCase())) {
+    throw new AppError(`"${name}" is already in your list.`);
+  }
+  if (list.length >= 40) throw new AppError('That is as many points of interest as the journal tracks.');
+
+  const pois = [...list, name].sort((a, b) => a.localeCompare(b));
+  const { error } = await db().from('users').update({ pois }).eq('id', who.id);
+  if (error) throw poiColumnError(error.message) || new AppError(error.message, 500);
+  return pois;
+}
+
+export async function removePoi(bearer: string | undefined, raw: unknown) {
+  const who = await requireProfile(bearer);
+  const name = String(raw || '').trim();
+  const pois = (await poiList(who.id)).filter((v) => v !== name);
+  const { error } = await db().from('users').update({ pois }).eq('id', who.id);
+  if (error) throw poiColumnError(error.message) || new AppError(error.message, 500);
+  return pois;
+}
+
+async function poiList(userId: string): Promise<string[]> {
+  const { data } = await db().from('users').select('pois').eq('id', userId).maybeSingle();
+  return ((data as { pois?: string[] } | null)?.pois) || [];
+}
+
+function poiColumnError(message: string): AppError | null {
+  return /pois/.test(message)
+    ? new AppError('Run migration 0009 in Supabase to use points of interest.')
+    : null;
 }
 
 /** Lets a member rename their own handle. */

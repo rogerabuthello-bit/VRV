@@ -133,7 +133,7 @@ function fail(e){ const m = msgOf(e); if(/AUTH/.test(m)) signOut(); else alert(m
 /* -------------------------------------------------------------- session UI */
 function lock(){
   ME=''; ROLE='user'; BOOTED=false; ALL=[]; FUNDS=[]; INSTR=[]; STRATS=[]; MEMBERS=[]; SCOPE_TOUCHED=false;
-  $('me').value='';
+  $('me').value=''; $('meName').textContent='';
   document.body.classList.add('locked');
   document.body.classList.remove('onboarding','is-admin');
   $('aPw').value=''; $('authErr').textContent=''; $('authOk').textContent='';
@@ -293,6 +293,8 @@ function setConf(v){
 document.querySelectorAll('#cbar button').forEach(b=>b.onclick=()=>setConf(String(b.dataset.v)));
 function setDir(v){
   $('dir').value = v==='Short' ? 'Short' : 'Long';
+  // Flips the accent token inside the log pane, so every highlight follows the side.
+  document.body.classList.toggle('dir-short', $('dir').value==='Short');
   document.querySelectorAll('[data-dir]').forEach(b=>{
     const on = b.dataset.dir===$('dir').value;
     b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
@@ -312,7 +314,7 @@ $('refresh').onclick = () => load().catch(fail);
 function load(){
   return api('getBootstrap').then(d => {
     if(d.needsOnboarding) return showOnboarding(d);
-    ME=d.me; ROLE=d.role||'user'; $('me').value=ME;
+    ME=d.me; ROLE=d.role||'user'; $('me').value=ME; $('meName').textContent=ME;
     document.body.classList.toggle('is-admin', ROLE==='admin'||ROLE==='superadmin');
     const wasLocked = document.body.classList.contains('locked');
     document.body.classList.remove('locked','onboarding');
@@ -322,7 +324,7 @@ function load(){
     fillForm(); fillFilters();
     if(!SCOPE_TOUCHED){ $('fTrader').value = ALL.some(t=>t.trader===ME) ? ME : '__ALL__'; }
     MYRISK=+d.riskPct||1; if(!$('calcPct').value) $('calcPct').value=MYRISK;
-    MYBROKER=d.broker||''; BROKERS=d.brokers||[]; fillBrokers();
+    MYBROKER=d.broker||''; BROKERS=d.brokers||[]; POIS=d.pois||[]; fillBrokers();
     fillTz(); fillCcy(); fillExitReason(); fillEmotions(); renderMistakes(); renderRules(); fillPois();
     render(); renderSetup(); recalcSize(); renderCalc();
     if(!EDITING) setDir($('dir').value || 'Long');
@@ -548,7 +550,7 @@ function renderSetup(){
     if(!confirm('Remove '+b.dataset.inst+' from your list? Past trades are kept.')) return;
     api('removeInstrument',b.dataset.inst,MYBROKER).then(load).catch(fail);
   });
-  fillBrokers(); renderInstrSpecs();
+  fillBrokers(); renderInstrSpecs(); renderPoiList(); fillPois();
   $('setRisk').value=MYRISK;
   const ss=myStratObjs();
   $('myStratList').innerHTML = ss.length ? ss.map(s=>{
@@ -559,13 +561,36 @@ function renderSetup(){
   }).join('') : '<span class="hint">No strategies yet – write your first one above.</span>';
   $('myStratList').querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{
     const s=myStratObjs().find(x=>x.name===b.dataset.edit); if(!s) return;
-    $('stName').value=s.name; $('stDesc').value=s.description||''; $('stRules').value=(s.rules||[]).join('\n'); $('stPois').value=(s.pois||[]).join('\n'); $('stName').focus(); window.scrollTo({top:0,behavior:'smooth'});
+    $('stName').value=s.name; $('stDesc').value=s.description||''; $('stRules').value=(s.rules||[]).join('\n'); $('stName').focus(); window.scrollTo({top:0,behavior:'smooth'});
   });
   $('myStratList').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
     if(!confirm('Remove strategy "'+b.dataset.del+'"? Past trades are kept.')) return;
     api('removeStrategy',b.dataset.del).then(load).catch(fail);
   });
 }
+
+function renderPoiList(){
+  $('myPoiList').innerHTML = POIS.length
+    ? POIS.map(n=>`<span class="chip">${esc(n)}<button type="button" class="chip-x" data-poi="${esc(n)}" aria-label="Remove ${esc(n)}">✕</button></span>`).join('')
+    : '<span class="hint">No points of interest yet.</span>';
+  $('myPoiList').querySelectorAll('[data-poi]').forEach(b=>b.onclick=()=>{
+    const n=b.dataset.poi, used=ALL.filter(t=>t.trader===ME && t.poi===n).length;
+    if(!confirm(used
+      ? 'Remove "'+n+'"? '+used+' logged trade'+(used===1?'':'s')+' keep it — only the picker loses the option.'
+      : 'Remove "'+n+'"?')) return;
+    $('poiMsg').textContent='';
+    api('removePoi',n).then(()=>load()).catch(e=>{ $('poiMsg').textContent=msgOf(e); });
+  });
+}
+$('addPoi').onclick = () => {
+  const v=$('newPoi').value.trim();
+  if(!v){ $('poiMsg').textContent='Type a name first.'; $('newPoi').focus(); return; }
+  $('addPoi').disabled=true; $('poiMsg').textContent='';
+  api('addPoi',v).then(()=>load().then(()=>{ $('newPoi').value=''; $('poiMsg').textContent='Added "'+v+'".'; }))
+    .catch(e=>{ $('poiMsg').textContent=msgOf(e); })
+    .finally(()=>{ $('addPoi').disabled=false; });
+};
+$('newPoi').addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); $('addPoi').click(); } });
 
 function renderInstrSpecs(){
   const ins=INSTR.filter(i=>i.trader===ME && (i.broker||'')===MYBROKER)
@@ -647,7 +672,7 @@ $('setInstrAdd').onclick=()=>{
 $('setInstr').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('setInstrAdd').click(); } });
 $('stSave').onclick=()=>{
   const n=$('stName').value.trim(); if(!n){ alert('Give the strategy a name.'); return; }
-  api('saveStrategy',n,$('stDesc').value.trim(),$('stRules').value,$('stPois').value).then(()=>{ $('stName').value=''; $('stDesc').value=''; $('stRules').value=''; $('stPois').value=''; return load(); }).catch(fail);
+  api('saveStrategy',n,$('stDesc').value.trim(),$('stRules').value).then(()=>{ $('stName').value=''; $('stDesc').value=''; $('stRules').value=''; return load(); }).catch(fail);
 };
 
 // ---- live preview & quality options ----
@@ -754,19 +779,18 @@ function fillEmotions(){
   if(EMOTIONS.includes(cur)) $('emotion').value = cur;
 }
 const rulesOf = name => (STRATS.find(s => s.trader===ME && s.name===name) || {}).rules || [];
-const poisOf  = name => (STRATS.find(s => s.trader===ME && s.name===name) || {}).pois  || [];
+let POIS = [];                      // the trader's library, usable with any strategy
 
-/** The POI list belongs to the chosen strategy, so it refills when that changes. */
+/** Any POI pairs with any strategy, so the list never depends on the strategy. */
 function fillPois(selected){
-  const list = poisOf($('strat').value);
   const cur = selected !== undefined ? selected : $('poi').value;
   $('poi').innerHTML = '<option value="">— not recorded —</option>'
-    + list.map(v=>`<option>${esc(v)}</option>`).join('');
-  if(list.includes(cur)) $('poi').value = cur;
-  $('poi').disabled = !list.length;
-  $('poiHint').textContent = list.length
+    + POIS.map(v=>`<option>${esc(v)}</option>`).join('');
+  if(POIS.includes(cur)) $('poi').value = cur;
+  $('poi').disabled = !POIS.length;
+  $('poiHint').textContent = POIS.length
     ? 'The level this setup formed at'
-    : ($('strat').value ? 'No POIs on this strategy yet — add them in My Setup' : 'Pick a strategy first');
+    : 'No points of interest yet — add them in My Setup';
 }
 
 function renderRules(checked){
@@ -792,7 +816,7 @@ function updateRuleHint(){
     : n === list.length ? '<span class="pos">All ' + list.length + ' followed.</span>'
     : `${n} of ${list.length} followed &mdash; <span class="neg">${list.length-n} broken</span>.`;
 }
-$('strat').addEventListener('change', () => { renderRules(); fillPois(''); });
+$('strat').addEventListener('change', () => renderRules());
 
 /* ================= Risk Architect & Ledger ================= */
 let CAL_MONTH = null;                       // Date pinned to the 1st of the shown month
@@ -1462,6 +1486,7 @@ function render(){
   group('byExit',list,exitOf,'How it ended');
   group('byEmotion',list,t=>t.emotion||'Not recorded','Feeling',true);
   group('byPoi',list,t=>t.poi||'Not recorded','Point of interest');
+  poiStrategyTable(list);
   mistakeTable(list); ruleTable(list); riskTable(list);
   leaderboard(); tradesTable(list); renderChrome();
 }
@@ -1597,6 +1622,27 @@ function riskTable(list){
           + `<td>${fmt(b.avgRiskPct,2)}%</td></tr>`;
       }).join('') + '</table>'
     + `<div class="hint" style="margin-top:8px">A band needs ${MIN_BAND_SAMPLE} trades before it counts as signal rather than noise.</div>`;
+}
+
+/** Every POI x strategy pairing that has actually been traded, best first. */
+function poiStrategyTable(list){
+  const scoped = list.filter(t => t.poi);
+  if(!scoped.length){
+    $('byPoiStrat').innerHTML = '<span style="color:var(--mut)">Tag a point of interest on your trades and the pairings show up here.</span>';
+    return;
+  }
+  const g = {};
+  scoped.forEach(t => { const k = t.poi + ' \u0000 ' + t.strategy; (g[k] = g[k] || []).push(t); });
+  const rows = Object.entries(g)
+    .map(([k,v]) => { const [poi,strat] = k.split(' \u0000 '); return { poi, strat, ...calc(v) }; })
+    .sort((a,b) => b.avgR - a.avgR);
+
+  $('byPoiStrat').innerHTML = '<table><tr><th>Point of interest</th><th>Strategy</th><th>Trades</th><th>Win %</th><th>Avg R</th><th>Total R</th></tr>'
+    + rows.map((r,i)=>`<tr${i===0&&r.n>1?' class="mrow sel"':''}><td>${esc(r.poi)}${i===0&&r.n>1?' <span class="tag">best pair</span>':''}</td>`
+      + `<td>${esc(r.strat)}</td><td>${r.n}</td>`
+      + `<td>${r.winRate==null?'–':fmt(r.winRate,0)+'%'}</td>`
+      + `<td class="${cls(r.avgR)}">${fmt(r.avgR)}</td><td class="${cls(r.totalR)}">${fmt(r.totalR)}</td></tr>`).join('')
+    + '</table>';
 }
 
 function leaderboard(){

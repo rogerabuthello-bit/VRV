@@ -169,10 +169,18 @@ direction), **Why** (point of interest and the rule checklist), **Levels &
 size**, then **Review**.
 
 A **point of interest** is the level or structure that made the trade worth
-taking, and the list belongs to the strategy — a POI only means anything
-inside the model that reads it, so each strategy carries its own alongside its
-rules. Pick one when logging and the dashboard shows which levels actually
-pay, with a matching filter.
+taking. The list belongs to the trader, not to a strategy: the same level gets
+read by several models, and the question worth answering — which POI works
+with which strategy — can only be asked once the two vary independently. So
+the dashboard carries both a plain breakdown by POI and a **POI × strategy**
+table, which is where the pairing shows up:
+
+> Order block + London breakout — 2 trades, 100%, **+2.50R** a trade
+> Order block + Asia range — 1 trade, 0%, **−1.00R**
+
+Selecting **Short** on the entry form flips the accent colour red across the
+whole log pane. Only the UI accent moves; profit and loss keep their own
+tokens, so a winning short still reads green.
 
 ### The psychology layer
 
