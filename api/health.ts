@@ -161,28 +161,58 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
          */
         if (providers.google && origin) {
           try {
-            const back = `${origin}/`;
-            const probe = await withTimeout(fetch(
-              `${url}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(back)}`,
-              { redirect: 'manual', headers: { apikey: anon } },
-            ), 8000);
-            const loc = probe.headers.get('location') || '';
-
-            if (/^https:\/\/accounts\.google\.com\//.test(loc)) {
+            /*
+             * Ask twice. Once for the address we actually want back, and once
+             * for one that cannot possibly be on the allow list. GoTrue swaps
+             * any address it does not recognise for the Site URL, so the
+             * control answer IS the Site URL - which turns "it went somewhere
+             * else" into "it went here, and your Site URL is this".
+             */
+            const askFor = async (to: string) => {
+              const probe = await withTimeout(fetch(
+                `${url}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(to)}`,
+                { redirect: 'manual', headers: { apikey: anon } },
+              ), 8000);
+              const loc = probe.headers.get('location') || '';
+              if (!/^https:\/\/accounts\.google\.com\//.test(loc)) {
+                return { handedOff: false, status: probe.status, loc, referrer: null as string | null };
+              }
               const state = new URL(loc).searchParams.get('state') || '';
-              const lands = String(readState(state)?.referrer || '');
-              checks.googleRedirect = lands.startsWith(origin)
-                ? ok(`Google returns the user to ${lands}`)
-                : bad(
-                  `Google would return the user to "${lands || 'the Site URL'}", not ${origin}. `
-                  + `That page is where sign-in dies. Add ${origin} as the Site URL AND under `
-                  + 'Redirect URLs in Supabase > Authentication > URL Configuration.',
-                );
-            } else {
+              const decoded = readState(state);
+              return {
+                handedOff: true,
+                status: probe.status,
+                loc,
+                // null means the token would not decode; '' means it decoded
+                // but carried no return address at all.
+                referrer: decoded === null ? null : String(decoded.referrer ?? ''),
+              };
+            };
+
+            const wanted = await askFor(`${origin}/`);
+            if (!wanted.handedOff) {
               checks.googleRedirect = bad(
-                `Supabase did not hand off to Google (HTTP ${probe.status}`
-                + `${loc ? `, sent to ${loc.slice(0, 200)}` : ''}). `
+                `Supabase did not hand off to Google (HTTP ${wanted.status}`
+                + `${wanted.loc ? `, sent to ${wanted.loc.slice(0, 200)}` : ''}). `
                 + 'Check the client ID and secret under Authentication > Providers > Google.',
+              );
+            } else if (wanted.referrer === null) {
+              checks.googleRedirect = bad(
+                'Supabase handed off to Google, but its hand-off token could not be read, '
+                + 'so this check cannot tell where sign-in returns to. Test it by hand: '
+                + `open ${origin}, press "Continue with Google", and see which address you land on.`,
+              );
+            } else if (wanted.referrer.startsWith(origin)) {
+              checks.googleRedirect = ok(`Google returns the user to ${wanted.referrer}`);
+            } else {
+              const control = await askFor('https://not-a-real-address.invalid/');
+              const siteUrl = control.referrer || null;
+              checks.googleRedirect = bad(
+                `Google would return the user to "${wanted.referrer || '(nowhere - no return address was recorded)'}", `
+                + `not ${origin}. That page is where sign-in dies.`
+                + (siteUrl ? ` Supabase's Site URL is currently "${siteUrl}".` : '')
+                + ` Add ${origin} as the Site URL AND add ${origin}/** under Redirect URLs `
+                + 'in Supabase > Authentication > URL Configuration, then save and retry.',
               );
             }
           } catch (e) {
