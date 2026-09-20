@@ -7,8 +7,18 @@ function required(name: string): string {
 }
 
 export const env = {
+  /**
+   * Normalised to the project origin. The Supabase dashboard shows several
+   * URLs and it is easy to copy the REST one ("…supabase.co/rest/v1"); taking
+   * the origin means either value works instead of 404-ing every auth call.
+   */
   get supabaseUrl() {
-    return required('SUPABASE_URL').replace(/\/+$/, '');
+    const raw = required('SUPABASE_URL').trim();
+    try {
+      return new URL(raw).origin;
+    } catch {
+      throw new AppError('SUPABASE_URL is not a valid URL (expected https://<ref>.supabase.co).', 500);
+    }
   },
   get serviceRoleKey() {
     return required('SUPABASE_SERVICE_ROLE_KEY');

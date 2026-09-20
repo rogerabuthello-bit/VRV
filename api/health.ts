@@ -18,6 +18,23 @@ type Check = { ok: boolean; detail: string };
 const ok = (detail: string): Check => ({ ok: true, detail });
 const bad = (detail: string): Check => ({ ok: false, detail });
 
+/** Supabase issues legacy JWT keys and the newer sb_publishable_ / sb_secret_ pair. */
+function kind(key: string): 'publishable' | 'secret' | 'legacy' | 'unknown' {
+  if (key.startsWith('sb_publishable_')) return 'publishable';
+  if (key.startsWith('sb_secret_')) return 'secret';
+  if (key.startsWith('eyJ')) return 'legacy';
+  return 'unknown';
+}
+
+function label(key: string): string {
+  switch (kind(key)) {
+    case 'publishable': return 'publishable key (new format)';
+    case 'secret': return 'secret key (new format)';
+    case 'legacy': return 'legacy JWT key';
+    default: return 'unrecognised key format';
+  }
+}
+
 async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   let timer: NodeJS.Timeout;
   const timeout = new Promise<never>((_, reject) => {
@@ -33,7 +50,14 @@ async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store');
 
-  const url = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
+  const rawUrl = (process.env.SUPABASE_URL || '').trim();
+  let url = '';
+  let urlHadPath = false;
+  try {
+    const parsed = new URL(rawUrl);
+    url = parsed.origin;
+    urlHadPath = parsed.pathname.replace(/\/+$/, '') !== '';
+  } catch { /* reported below */ }
   const anon = process.env.SUPABASE_ANON_KEY || '';
   const service = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
   const superadmin = (process.env.SUPERADMIN_USERNAME || 'ROGERB').trim();
@@ -44,15 +68,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const next: string[] = [];
 
   /* ---------------------------------------------------------- environment */
-  checks.SUPABASE_URL = url
-    ? ok(url)
-    : bad('missing - add it in Vercel > Settings > Environment Variables');
-  checks.SUPABASE_ANON_KEY = anon
-    ? ok(`set (${anon.length} chars)`)
-    : bad('missing - the page cannot start Supabase without it');
-  checks.SUPABASE_SERVICE_ROLE_KEY = service
-    ? ok(`set (${service.length} chars)`)
-    : bad('missing - every signed-in request will fail');
+  checks.SUPABASE_URL = !rawUrl
+    ? bad('missing - add it in Vercel > Settings > Environment Variables')
+    : !url
+      ? bad(`"${rawUrl}" is not a valid URL - it should be https://<ref>.supabase.co`)
+      : urlHadPath
+        ? ok(`${url} (a path was trimmed off "${rawUrl}" - set it to the origin only)`)
+        : ok(url);
+
+  checks.SUPABASE_ANON_KEY = !anon
+    ? bad('missing - the page cannot start Supabase without it')
+    : kind(anon) === 'secret'
+      ? bad('this looks like a SECRET key. It is served to every visitor - swap it for '
+            + 'the publishable/anon key and rotate the secret immediately.')
+      : ok(`${label(anon)}, ${anon.length} chars`);
+
+  checks.SUPABASE_SERVICE_ROLE_KEY = !service
+    ? bad('missing - every signed-in request will fail')
+    : kind(service) === 'publishable'
+      ? bad('this is a publishable/anon key, not a secret one. It cannot bypass RLS, '
+            + 'so every read returns nothing. Use the service_role or sb_secret_ key.')
+      : ok(`${label(service)}, ${service.length} chars`);
   checks.SUPERADMIN_USERNAME = ok(superadmin);
   checks.BOOTSTRAP_INVITE_CODE = bootstrap
     ? ok('set - the owner account can still be claimed')
@@ -89,7 +125,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           ? bad('signups are disabled in Supabase, so nobody new can be created')
           : ok('allowed');
       } else {
-        checks.supabaseReachable = bad(`auth endpoint returned HTTP ${r.status}`);
+        checks.supabaseReachable = bad(
+          r.status === 404
+            ? `auth endpoint returned 404 - SUPABASE_URL is pointing at "${rawUrl}". `
+              + 'It must be the project origin, with no /rest/v1 or other path.'
+            : r.status === 401
+              ? 'auth endpoint returned 401 - the anon/publishable key does not match this project.'
+              : `auth endpoint returned HTTP ${r.status}`,
+        );
       }
     } catch (e) {
       checks.supabaseReachable = bad(

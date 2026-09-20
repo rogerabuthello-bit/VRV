@@ -67,9 +67,9 @@ In the [Google Cloud console](https://console.cloud.google.com/apis/credentials)
 
    | Variable | Where it comes from |
    | --- | --- |
-   | `SUPABASE_URL` | Supabase → Project Settings → API |
-   | `SUPABASE_ANON_KEY` | same page, *anon / public* key |
-   | `SUPABASE_SERVICE_ROLE_KEY` | same page, *service_role* key — **secret** |
+   | `SUPABASE_URL` | Supabase → Project Settings → API. **The origin only** — `https://<ref>.supabase.co`, with no `/rest/v1` on the end |
+   | `SUPABASE_ANON_KEY` | the *anon / publishable* key (`sb_publishable_…`, or a legacy `eyJ…` JWT) |
+   | `SUPABASE_SERVICE_ROLE_KEY` | the *service_role / secret* key (`sb_secret_…`, or a legacy `eyJ…` JWT) — **never the publishable one** |
    | `SUPERADMIN_USERNAME` | `ROGERB` |
    | `BOOTSTRAP_INVITE_CODE` | a long random string you invent |
    | `SUPERADMIN_EMAIL` | *(optional)* pins the owner to one Google account |
