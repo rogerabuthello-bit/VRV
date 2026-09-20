@@ -425,6 +425,8 @@
   .pipcell .l{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--mut)}
   .pipcell .v{font-size:16px;font-weight:700;color:var(--txt-strong);line-height:1.2}
   .pipcell .v.over{color:var(--neg)}
+  .pipnote{margin:-6px 0 16px;line-height:1.55}
+  .pipnote:empty{display:none}
   .dirpick{display:flex;gap:8px}
   .dirbtn{
     flex:1;background:var(--inset);border:1px solid var(--line);color:var(--mut);
@@ -605,17 +607,6 @@
   .tagpick.on{background:color-mix(in srgb,var(--r) 18%,var(--inset));border-color:var(--r);color:var(--r)}
   body.editing .card-entry{border-color:color-mix(in srgb,var(--accent-2) 55%,var(--line))}
 
-  /* ---------------- position size calculator ---------------- */
-  .calc{
-    margin-top:16px;
-    border-color:color-mix(in srgb, var(--accent-2) 42%, var(--line));
-    background:linear-gradient(180deg, color-mix(in srgb, var(--accent-2) 8%, transparent) 0%, transparent 110px), var(--card);
-  }
-  .calc > .card-head h2{color:var(--accent-2)}
-  .calc-risk{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mut)}
-  .calc-risk label{margin:0}
-  .calc-risk input{width:82px;text-align:right;font-weight:700}
-  .calc .stat .v{font-size:19px}
   .stat.lead{border-color:color-mix(in srgb,var(--accent-2) 55%,var(--line));background:color-mix(in srgb,var(--accent-2) 10%,var(--inset))}
   .stat.lead .v{color:var(--accent-2)}
   .spec-tbl input{padding:6px 8px;font-size:13px;width:110px}
@@ -670,12 +661,7 @@
     border-radius:var(--radius-sm);box-shadow:none;
   }
   .card{background:var(--card);border:1px solid var(--line)}
-  .card-focus,.card-quality,.calc{
-    background:var(--card);
-    border-color:var(--line);
-    border-left:2px solid var(--accent);
-  }
-  .card-quality{border-left-color:var(--b)}
+  .card-focus,.card-quality,  .card-quality{border-left-color:var(--b)}
   input,select,textarea{
     background:var(--inset);border-radius:var(--radius-sm);border-color:var(--line);
   }
@@ -908,6 +894,7 @@
       <div class="pipcell"><span class="l">Risking</span><span class="v" id="pipRisk">–</span></div>
       <div class="pipcell"><span class="l">of equity</span><span class="v" id="pipPct">–</span></div>
     </div>
+    <div class="hint pipnote" id="pipNote"></div>
     <div class="formsec">
       <div class="fs-head"><span class="fs-n">01</span><h3>When</h3><span class="fs-sub">The clock it happened on</span></div>
     <div class="grid form">
@@ -1010,18 +997,6 @@
     </div>
 
     <div class="field" style="margin-top:14px"><label for="notes">Notes</label><textarea id="notes" rows="2"></textarea></div>
-    <section class="card calc" id="calcCard">
-      <div class="card-head">
-        <h2>Position size</h2>
-        <div class="calc-risk">
-          <label for="calcPct">Risk</label>
-          <input type="number" step="0.05" min="0.01" max="100" id="calcPct" inputmode="decimal">
-          <span>% of equity</span>
-        </div>
-      </div>
-      <div class="grid stats" id="calcOut"></div>
-      <div class="hint" id="calcNote"></div>
-    </section>
     <div class="preview" id="preview">Fill entry, initial SL and exit to preview.</div>
     <div class="entry-actions">
       <button id="add">Add trade</button>

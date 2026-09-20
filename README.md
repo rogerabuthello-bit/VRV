@@ -174,6 +174,11 @@ Lot size and risk amount are two views of one decision, so whichever you type
 drives the other — size by money ("I'll risk 200") or by lots, whichever way
 you think.
 
+The entry form does not size positions - it records one already taken, and
+the strip along its top reports what that trade actually is: stop and target
+in pips, R:R, lots, money at risk and share of equity. Sizing something not
+yet traded belongs to Risk & Calendar.
+
 Past trades are then grouped into risk bands and the band with the best
 expectancy is your sweet spot. A band needs at least 5 trades before it counts
 as signal. When you size above that band, the form tells you what has actually
