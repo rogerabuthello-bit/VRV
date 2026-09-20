@@ -165,6 +165,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const total = Number(range.split('/')[1]);
         checks.members = ok(Number.isFinite(total) ? `${total} account(s)` : 'unknown');
 
+        const closed = await rest('trades?select=closed_utc&limit=1');
+        checks.tradeCloseTime = closed.ok
+          ? ok('recorded')
+          : bad('migration 0002 not applied - run supabase/migrations/0002_trade_closed_at.sql. '
+                + 'Trades still save, just without a close time.');
+
         const sa = await rest('users?select=username&role=eq.superadmin&limit=1');
         if (sa.ok) {
           const rows = (await sa.json()) as { username: string }[];

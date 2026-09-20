@@ -4,8 +4,56 @@ import { requireProfile } from '../auth';
 import { check } from '../query';
 import { verifyUploaded, removeObjects, ownsPath } from './shots';
 import {
-  QUALITY, SESSIONS, MAX_SHOTS, num, round, validTz, validCcy, offsetMin, sessionOf, uuid,
+  QUALITY, SESSIONS, MAX_SHOTS, num, round, validTz, validCcy, offsetMin, sessionOf, uuid, isIsoDate,
 } from '../util';
+
+const DAY = 86400000;
+
+/**
+ * Works out when the trade was closed from the wall-clock time the trader
+ * entered. With no explicit close date, a clock time at or before the entry
+ * time means it closed after midnight, so roll forward a day; anything longer
+ * needs the date spelled out.
+ */
+function closedAt(t: Record<string, unknown>, openDate: string, opened: Date, off: number): Date | null {
+  const time = String(t.closeTime || '').trim();
+  if (!time) return null;
+
+  const m = /^(\d{2}):(\d{2})$/.exec(time);
+  if (!m || +m[1] > 23 || +m[2] > 59) throw new AppError('Enter the close time as HH:MM.');
+
+  const explicit = String(t.closeDate || '').trim();
+  if (explicit && !isIsoDate(explicit)) throw new AppError('Invalid close date.');
+  const date = explicit || openDate;
+
+  const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!dm) throw new AppError('Invalid close date.');
+
+  let closed = new Date(Date.UTC(+dm[1], +dm[2] - 1, +dm[3], +m[1], +m[2]) - off * 60000);
+  if (!explicit && closed.getTime() <= opened.getTime()) closed = new Date(closed.getTime() + DAY);
+
+  if (closed.getTime() < opened.getTime()) {
+    throw new AppError('The close time is before the entry time. Set a close date if it ran over.');
+  }
+  if (closed.getTime() - opened.getTime() > 365 * DAY) {
+    throw new AppError('That trade would be open for over a year - check the close date.');
+  }
+  return closed;
+}
+
+/**
+ * Lets the app keep saving trades on a database where migration 0002 has not
+ * been applied yet, instead of failing every save outright.
+ */
+async function insertTrade(supabase: ReturnType<typeof db>, row: Record<string, unknown>) {
+  const first = await supabase.from('trades').insert(row).select('id').single();
+  if (first.error && /closed_utc/.test(first.error.message)) {
+    const { closed_utc, ...legacy } = row;
+    void closed_utc;
+    return supabase.from('trades').insert(legacy).select('id').single();
+  }
+  return first;
+}
 
 /** Add a completed trade for the signed-in user. */
 export async function addTrade(bearer: string | undefined, raw: unknown) {
@@ -81,6 +129,7 @@ export async function addTrade(bearer: string | undefined, raw: unknown) {
   if (chk.getUTCMonth() !== mo || chk.getUTCDate() !== d) throw new AppError('Invalid date or time.');
 
   const opened = new Date(Date.UTC(y, mo, d, hh, mm) - off * 60000);
+  const closed = closedAt(t, date, opened, off);
   const currency = validCcy(t.currency) || who.profile.currency || 'USD';
   const session = (SESSIONS as readonly string[]).includes(String(t.session))
     ? String(t.session)
@@ -89,9 +138,7 @@ export async function addTrade(bearer: string | undefined, raw: unknown) {
   const shots = Array.isArray(t.shots) ? t.shots.map(String).filter(Boolean) : [];
   const screenshots = await verifyUploaded(who.id, shots);
 
-  const { data, error } = await supabase
-    .from('trades')
-    .insert({
+  const { data, error } = await insertTrade(supabase, {
       user_id: who.id,
       trade_date: date,
       instrument,
@@ -114,11 +161,10 @@ export async function addTrade(bearer: string | undefined, raw: unknown) {
       screenshots,
       timezone,
       opened_utc: opened.toISOString(),
+      closed_utc: closed ? closed.toISOString() : null,
       session,
       currency,
-    })
-    .select('id')
-    .single();
+  });
   if (error) {
     await removeObjects(screenshots);
     throw new AppError(error.message, 500);
@@ -132,6 +178,7 @@ export async function addTrade(bearer: string | undefined, raw: unknown) {
     outcome,
     trailed: slTrailed ? 'Yes' : 'No',
     session,
+    heldMinutes: closed ? Math.round((closed.getTime() - opened.getTime()) / 60000) : '',
   };
 }
 

@@ -13,7 +13,8 @@ interface TradeRow {
   initial_tp: number | null; exit_price: number; risk: number | null; planned_rr: number | null;
   result_r: number; pnl: number | null; outcome: string; quality: string; notes: string;
   confidence: number; screenshots: string[]; timezone: string; opened_utc: string;
-  session: string; currency: string; trader: { username: string } | null;
+  session: string; currency: string; closed_utc: string | null;
+  trader: { username: string } | null;
 }
 
 /** Public: what the browser needs before it can talk to Supabase Auth. */
@@ -93,6 +94,7 @@ export async function getBootstrap(bearer: string | undefined) {
       shots: t.screenshots || [],
       timezone: t.timezone || '',
       openedUtc: isoOrEmpty(t.opened_utc),
+      closedUtc: isoOrEmpty(t.closed_utc),
       session: t.session || '',
       currency: t.currency || '',
     })),

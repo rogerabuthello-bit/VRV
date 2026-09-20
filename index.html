@@ -510,6 +510,8 @@
     <div class="grid form">
       <div class="field"><label for="date">Date (your local)</label><input type="date" id="date"></div>
       <div class="field"><label for="ttime">Time trade was taken</label><input type="time" id="ttime"></div>
+      <div class="field"><label for="xtime">Time trade was closed</label><input type="time" id="xtime"><div class="hint">Optional &mdash; gives you hold time</div></div>
+      <div class="field"><label for="xdate">Closed on (if not the same day)</label><input type="date" id="xdate"><div class="hint">Blank = same day, or next day if earlier</div></div>
       <div class="field"><label for="tz">Time zone (UTC/GMT)</label><select id="tz"></select><div class="hint" id="tzHint">Defaults to your saved time zone</div></div>
       <div class="field"><label for="sess">Session</label><select id="sess"><option value="">Auto (from time)</option></select></div>
       <div class="field"><label for="instr">Instrument</label>

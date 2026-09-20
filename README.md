@@ -36,9 +36,10 @@ The dashboard, stats and charts are the same ones you already use.
 ### 1. Supabase
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. Open **SQL Editor**, paste all of `supabase/migrations/0001_init.sql`, run it.
-   This creates the tables, locks them with RLS, and creates the private
-   `screenshots` bucket.
+2. Open **SQL Editor** and run each file in `supabase/migrations/` in order.
+   `0001_init.sql` creates the tables, locks them with RLS, and creates the
+   private `screenshots` bucket; later files are additive and safe to re-run.
+   `/api/health` tells you if one is still pending.
 3. **Authentication → Providers → Google**: enable it, and paste in a Google
    OAuth client ID and secret (see below).
 4. **Authentication → URL Configuration**: set *Site URL* to your Vercel domain

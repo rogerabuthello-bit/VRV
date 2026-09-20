@@ -383,6 +383,20 @@ function zonedToUtc(dateStr,timeStr,tz){          // wall-clock time at a UTC of
   const [y,m,d]=dateStr.split('-').map(Number), [hh,mm]=timeStr.split(':').map(Number);
   return new Date(Date.UTC(y,m-1,d,hh,mm)-(offMin(tz)||0)*60000);
 }
+/** Minutes a trade was open, or null when no close time was recorded. */
+function holdMin(t){
+  if(!t || !t.openedUtc || !t.closedUtc) return null;
+  const a=Date.parse(t.openedUtc), b=Date.parse(t.closedUtc);
+  return (isNaN(a)||isNaN(b)||b<a) ? null : Math.round((b-a)/60000);
+}
+function fmtDur(min){
+  if(min==null||isNaN(min)) return '–';
+  min=Math.round(min);
+  if(min<60) return min+'m';
+  const d=Math.floor(min/1440), h=Math.floor(min%1440/60), m=min%60;
+  if(d) return d+'d'+(h?' '+h+'h':'');
+  return h+'h'+(m?' '+m+'m':'');
+}
 function fmtIn(iso,tz,withDate=true){
   if(!iso) return '–';
   try{
@@ -411,10 +425,20 @@ function fillCcy(){
 function tzPreview(){
   const d=$('date').value, t=$('ttime').value, tz=$('tz').value;
   if(!d||!t||!tz){ $('tzHint').textContent = tz && tz!==MYTZ ? 'Different from your default ('+MYTZ+')' : 'Pick the offset your clock showed (daylight saving changes it)'; return; }
-  try{ const u=zonedToUtc(d,t,tz); $('tzHint').textContent = `= ${fmtIn(u.toISOString(),'UTC',false)} UTC · ${$('sess').value||sessionOfUtc(u)} session`; }
+  try{
+    const u=zonedToUtc(d,t,tz);
+    let txt = `= ${fmtIn(u.toISOString(),'UTC',false)} UTC · ${$('sess').value||sessionOfUtc(u)} session`;
+    const xt=$('xtime').value;
+    if(xt){
+      let c=zonedToUtc($('xdate').value||d, xt, tz);
+      if(!$('xdate').value && c.getTime()<=u.getTime()) c=new Date(c.getTime()+86400000);
+      txt += c.getTime()>=u.getTime() ? ` · held ${fmtDur((c-u)/60000)}` : ' · ⚠ closes before entry';
+    }
+    $('tzHint').textContent = txt;
+  }
   catch(e){ $('tzHint').textContent=''; }
 }
-['date','ttime','tz','sess'].forEach(id=>$(id).addEventListener('input',tzPreview));
+['date','ttime','xtime','xdate','tz','sess'].forEach(id=>$(id).addEventListener('input',tzPreview));
 $('setTzSave').onclick=()=>{ api('saveTimezone',$('setTz').value).then(z=>{ MYTZ=z; $('setTzMsg').textContent='Saved: '+z; fillTz(); render(); }).catch(fail); };
 $('setCcySave').onclick=()=>{ api('saveCurrency',$('setCcy').value).then(c=>{ MYCCY=c; $('setCcyMsg').textContent='Saved: '+c; fillCcy(); }).catch(fail); };
 $('obCcy').innerHTML=ccyOptions(guessCcy());
@@ -537,13 +561,13 @@ function updateQuality(){
 }
 
 $('add').onclick = () => {
-  const t={date:$('date').value,time:$('ttime').value,timezone:$('tz').value,currency:$('ccy').value,session:$('sess').value,instrument:$('instr').value,strategy:$('strat').value,direction:$('dir').value,
+  const t={date:$('date').value,time:$('ttime').value,closeTime:$('xtime').value,closeDate:$('xdate').value,timezone:$('tz').value,currency:$('ccy').value,session:$('sess').value,instrument:$('instr').value,strategy:$('strat').value,direction:$('dir').value,
     entry:$('entry').value,sl:$('sl').value,finalSl:$('fsl').value,tp:$('tp').value,exit:$('exit').value,
     risk:$('risk').value,confidence:$('conf').value,shots:SHOTS,quality:$('quality').value,notes:$('notes').value};
   $('add').disabled=true; $('msg').textContent=SHOTS.length?'Uploading screenshots…':'Saving…';
   uploadShots(SHOTS).then(paths=>{ t.shots=paths; if(paths.length) $('msg').textContent='Saving trade…'; return api('addTrade',t); }).then(r=>{
     $('add').disabled=false; $('msg').textContent=`Saved: ${r.outcome} ${fmt(r.r)}R${r.trailed==='Yes'?' (trailed)':''} · ${r.session}`;
-    ['entry','sl','fsl','tp','exit','risk','notes'].forEach(i=>$(i).value=''); $('quality').value=''; $('ttime').value=''; $('sess').value=''; setConf(''); SHOTS=[]; renderThumbs(); preview(); tzPreview(); load().catch(fail);
+    ['entry','sl','fsl','tp','exit','risk','notes'].forEach(i=>$(i).value=''); $('quality').value=''; $('ttime').value=''; $('xtime').value=''; $('xdate').value=''; $('sess').value=''; setConf(''); SHOTS=[]; renderThumbs(); preview(); tzPreview(); load().catch(fail);
   }).catch(e=>{ $('add').disabled=false; const m=(e&&e.message)||String(e); if(/AUTH/.test(m)) return fail(e); $('msg').textContent='Error: '+m; });
 };
 function del(id){
@@ -576,7 +600,8 @@ function calc(list){
     pf:gl>0?gw/gl:(gw>0?Infinity:null), avgW,avgL, realRR:avgL?Math.abs(avgW/avgL):null,
     plannedRR:planned.length?planned.reduce((a,b)=>a+b,0)/planned.length:null, maxDD:dd,
     q, discipline:n?good/n*100:null, trailed:list.filter(t=>t.trailed==='Yes').length,
-    avgConf:(()=>{const c=list.map(t=>+t.confidence).filter(x=>x>0);return c.length?c.reduce((a,b)=>a+b,0)/c.length:null;})() };
+    avgConf:(()=>{const c=list.map(t=>+t.confidence).filter(x=>x>0);return c.length?c.reduce((a,b)=>a+b,0)/c.length:null;})(),
+    avgHold:(()=>{const h=list.map(holdMin).filter(x=>x!=null);return h.length?h.reduce((a,b)=>a+b,0)/h.length:null;})() };
 }
 function pnlCard(s){
   const e=Object.entries(s.pnlBy);
@@ -628,7 +653,8 @@ function render(){
     c('Max drawdown (R)',fmt(s.maxDD),s.maxDD>0?'neg':'') +
     c('Discipline (good trades)',s.discipline==null?'–':fmt(s.discipline,0)+'%',s.discipline>=60?'pos':'neg') +
     c('Trades with trailed SL',s.trailed) +
-    c('Avg confidence (1-5)',s.avgConf==null?'–':fmt(s.avgConf,1));
+    c('Avg confidence (1-5)',s.avgConf==null?'–':fmt(s.avgConf,1)) +
+    c('Avg hold time',fmtDur(s.avgHold));
   drawCurve(list);
   trend(list);
   qualTable(s);
@@ -713,8 +739,8 @@ function leaderboard(){
 }
 function tradesTable(list){
   const me=$('me').value.trim().toLowerCase(), rows=[...list].reverse();
-  $('tbl').innerHTML=rows.length?`<table><tr><th>Date</th><th>Time (UTC)</th><th>Time (${esc(MYTZ)})</th><th>Session</th><th>Trader</th><th>Instrument</th><th>Dir</th><th>Strategy</th><th>Entry</th><th>Init SL</th><th>Final SL</th><th>Init TP</th><th>TP taken</th><th>Plan RR</th><th>R</th><th>PnL</th><th>Result</th><th>Quality</th><th>Conf</th><th>Shots</th><th>Notes</th><th></th></tr>`+
-    rows.map(t=>`<tr><td>${esc(t.date)}</td><td>${fmtIn(t.openedUtc,'UTC',false)}</td><td title="Trader's own time: ${esc(fmtIn(t.openedUtc,t.timezone||'UTC',false))} ${esc(t.timezone)}">${fmtIn(t.openedUtc,MYTZ,false)}</td><td>${esc(t.session)||'–'}</td><td>${esc(t.trader)}</td><td>${esc(t.instrument)}</td><td>${t.direction}</td><td>${esc(t.strategy)}</td><td>${t.entry}</td><td>${t.sl}</td><td>${t.trailed==='Yes'?t.finalSl+' ⤴':'–'}</td><td>${t.tp}</td><td>${t.exit}</td><td>${t.plannedRR===''?'–':'1:'+t.plannedRR}</td><td class="${cls(t.r)}">${fmt(t.r)}</td><td class="${cls(t.pnl)}">${t.pnl===''?'–':fmt(t.pnl)+' '+esc(t.currency||'')}</td><td><span class="pill ${t.outcome}">${t.outcome}</span></td><td><span class="pill ${key(t.quality)}">${esc(t.quality)}</span></td><td>${miniBar(t.confidence)}</td><td class="shot-cell">${(t.shots&&t.shots.length)?`<button type="button" class="ghost small" data-view="${esc(t.shots.join(','))}">&#128247; ${t.shots.length}</button>`:''}${(String(t.trader).toLowerCase()===me&&(!t.shots||t.shots.length<MAXSHOTS))?`<button type="button" class="ghost small" data-addshot="${t.id}" title="Add screenshot">+&#128247;</button>`:''}</td><td style="white-space:normal;max-width:220px">${esc(t.notes)}</td><td>${String(t.trader).toLowerCase()===me?`<button class="ghost small" onclick="del('${t.id}')">✕</button>`:''}</td></tr>`).join('')+'</table>'
+  $('tbl').innerHTML=rows.length?`<table><tr><th>Date</th><th>Time (UTC)</th><th>Time (${esc(MYTZ)})</th><th>Closed (${esc(MYTZ)})</th><th>Held</th><th>Session</th><th>Trader</th><th>Instrument</th><th>Dir</th><th>Strategy</th><th>Entry</th><th>Init SL</th><th>Final SL</th><th>Init TP</th><th>TP taken</th><th>Plan RR</th><th>R</th><th>PnL</th><th>Result</th><th>Quality</th><th>Conf</th><th>Shots</th><th>Notes</th><th></th></tr>`+
+    rows.map(t=>`<tr><td>${esc(t.date)}</td><td>${fmtIn(t.openedUtc,'UTC',false)}</td><td title="Trader's own time: ${esc(fmtIn(t.openedUtc,t.timezone||'UTC',false))} ${esc(t.timezone)}">${fmtIn(t.openedUtc,MYTZ,false)}</td><td>${t.closedUtc?fmtIn(t.closedUtc,MYTZ,false):'–'}</td><td>${fmtDur(holdMin(t))}</td><td>${esc(t.session)||'–'}</td><td>${esc(t.trader)}</td><td>${esc(t.instrument)}</td><td>${t.direction}</td><td>${esc(t.strategy)}</td><td>${t.entry}</td><td>${t.sl}</td><td>${t.trailed==='Yes'?t.finalSl+' ⤴':'–'}</td><td>${t.tp}</td><td>${t.exit}</td><td>${t.plannedRR===''?'–':'1:'+t.plannedRR}</td><td class="${cls(t.r)}">${fmt(t.r)}</td><td class="${cls(t.pnl)}">${t.pnl===''?'–':fmt(t.pnl)+' '+esc(t.currency||'')}</td><td><span class="pill ${t.outcome}">${t.outcome}</span></td><td><span class="pill ${key(t.quality)}">${esc(t.quality)}</span></td><td>${miniBar(t.confidence)}</td><td class="shot-cell">${(t.shots&&t.shots.length)?`<button type="button" class="ghost small" data-view="${esc(t.shots.join(','))}">&#128247; ${t.shots.length}</button>`:''}${(String(t.trader).toLowerCase()===me&&(!t.shots||t.shots.length<MAXSHOTS))?`<button type="button" class="ghost small" data-addshot="${t.id}" title="Add screenshot">+&#128247;</button>`:''}</td><td style="white-space:normal;max-width:220px">${esc(t.notes)}</td><td>${String(t.trader).toLowerCase()===me?`<button class="ghost small" onclick="del('${t.id}')">✕</button>`:''}</td></tr>`).join('')+'</table>'
     :'<span style="color:var(--mut)">No trades yet – log your first one above.</span>';
 }
 const LINECOL=['#8b6cff','#22d3ee','#f5c542','#ff5f6d','#2fd27b','#f472b6','#fb923c','#60a5fa','#a3e635','#c084fc'];
