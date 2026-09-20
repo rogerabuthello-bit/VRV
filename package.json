@@ -1,0 +1,23 @@
+{
+  "name": "vrv-trading-journal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VRV Trading Journal - multi-user trading journal on Supabase, deployed on Vercel.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "dev": "vercel dev",
+    "vendor": "mkdir -p build assets/vendor && echo \"export * from '@supabase/supabase-js';\" > build/entry.js && esbuild build/entry.js --bundle --format=esm --minify --target=es2020 --outfile=assets/vendor/supabase.js && rm -rf build"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@vercel/node": "^3.2.0",
+    "typescript": "^5.5.4",
+    "esbuild": "^0.23.0"
+  }
+}

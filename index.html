@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VRV Trading Journal</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0d16'/%3E%3Cpath d='M6 9l10 15L26 9' fill='none' stroke='%238b6cff' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M11 9l5 7.5L21 9' fill='none' stroke='%2322d3ee' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ============================================================
+     DESIGN TOKENS  ·  dark is the default theme
+     ============================================================ */
+  :root{
+    color-scheme:dark;
+    --font:'Inter',system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+
+    /* ---- VRV Trading brand: ink-black surfaces, violet primary, cyan secondary ---- */
+    --bg:#06080f;
+    --bg-glow:radial-gradient(1000px 520px at 8% -10%, rgba(139,108,255,.20) 0%, transparent 60%),
+              radial-gradient(900px 460px at 100% -5%, rgba(34,211,238,.10) 0%, transparent 55%);
+    --card:#0d111b;
+    --card-2:#0a0e17;
+    --inset:#080b13;
+    --line:#1e2538;
+    --line-soft:#151b2b;
+    --txt:#e7eaf6;
+    --txt-strong:#f8f9ff;
+    --mut:#8f99b7;
+    --mut-2:#5f6a88;
+
+    --accent:#8b6cff;
+    --accent-strong:#6a48f2;
+    --accent-2:#22d3ee;
+    --accent-ink:#0b0722;
+    --grad:linear-gradient(135deg,#8b6cff 0%,#6a48f2 55%,#3b82f6 100%);
+    --focus:#b9a8ff;
+
+    /* semantic + quality (aligned with the chart colours in the script) */
+    --g:#2fd27b;   /* positive / Good Win green */
+    --r:#ff5f6d;   /* negative / Bad Loss red   */
+    --b:#4cc4ff;   /* Good Loss blue            */
+    --y:#f5c542;   /* Bad Win amber             */
+    --pos:var(--g);
+    --neg:var(--r);
+
+    --shadow:0 1px 2px rgba(0,0,0,.35), 0 10px 30px -18px rgba(0,0,0,.7);
+    --radius:14px;
+    --radius-sm:9px;
+  }
+
+  /* ---------- LIGHT THEME (CSS-only toggle, no JS / no storage) ---------- */
+  :root:has(#themeToggle:checked){
+    color-scheme:light;
+    --bg:#f4f2fc;
+    --bg-glow:radial-gradient(1000px 520px at 8% -10%, rgba(139,108,255,.16) 0%, transparent 60%),
+              radial-gradient(900px 460px at 100% -5%, rgba(34,211,238,.10) 0%, transparent 55%);
+    --card:#ffffff;
+    --card-2:#f7f6fd;
+    --inset:#f3f1fb;
+    --line:#ddd9ef;
+    --line-soft:#ebe8f6;
+    --txt:#1a1636;
+    --txt-strong:#0d0a24;
+    --mut:#5d5a7c;
+    --mut-2:#807d9c;
+
+    --accent:#6a45e8;
+    --accent-strong:#5232c8;
+    --accent-2:#0a8fa8;
+    --accent-ink:#ffffff;
+    --grad:linear-gradient(135deg,#7c5cf5 0%,#5b3be0 60%,#2f6fe0 100%);
+    --focus:#6a45e8;
+
+    --g:#0c8a4e;
+    --r:#d62839;
+    --b:#0a72b8;
+    --y:#9a6a12;
+
+    --shadow:0 1px 2px rgba(16,32,64,.06), 0 12px 28px -20px rgba(16,32,64,.4);
+  }
+
+  *{box-sizing:border-box}
+  html,body{min-height:100%}
+  body{
+    margin:0;
+    font-family:var(--font);
+    background:var(--bg-glow), var(--bg);
+    background-attachment:fixed;
+    color:var(--txt);
+    font-size:14px;
+    line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+
+  /* ============================================================ HEADER */
+  header{
+    position:sticky;top:0;z-index:20;
+    display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;
+    padding:12px 20px;
+    background:color-mix(in srgb, var(--bg) 80%, transparent);
+    backdrop-filter:saturate(140%) blur(10px);
+    -webkit-backdrop-filter:saturate(140%) blur(10px);
+    border-bottom:1px solid var(--line);
+  }
+  .brand{display:flex;align-items:center;gap:11px}
+  .logo{
+    display:grid;place-items:center;width:38px;height:38px;border-radius:11px;flex:none;
+    background:linear-gradient(160deg,#141a2b,#0a0e18);
+    border:1px solid color-mix(in srgb,var(--accent) 45%,var(--line));
+    box-shadow:0 8px 22px -10px var(--accent), inset 0 1px 0 rgba(255,255,255,.06);
+  }
+  .logo svg{width:24px;height:24px;display:block}
+  :root:has(#themeToggle:checked) .logo{background:linear-gradient(160deg,#171238,#0b0824)}
+  .wordmark{display:flex;flex-direction:column;line-height:1}
+  .wordmark b{font-size:20px;font-weight:800;letter-spacing:.14em;color:var(--txt-strong)}
+  .wordmark b i{font-style:normal;background:var(--grad);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .wordmark small{margin-top:4px;font-size:9.5px;font-weight:600;letter-spacing:.42em;color:var(--mut);text-transform:uppercase}
+  h1{font-size:17px;font-weight:700;margin:0;letter-spacing:-.01em}
+  .auth-card .wordmark{margin:14px 0 4px}
+  .head-tools{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+  .head-name label{margin-bottom:2px}
+  .head-name input{width:150px;max-width:40vw;font-weight:600}
+
+  /* theme switch */
+  .theme-switch{display:flex;align-items:center}
+  .theme-switch input{position:absolute;opacity:0;width:1px;height:1px}
+  .theme-switch label{
+    display:inline-flex;align-items:center;gap:8px;cursor:pointer;
+    font-size:12px;color:var(--mut);margin:0;user-select:none;
+  }
+  .ts-track{
+    position:relative;width:42px;height:24px;border-radius:99px;
+    background:var(--inset);border:1px solid var(--line);transition:background .2s,border-color .2s;
+  }
+  .ts-thumb{
+    position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;
+    background:var(--accent);transition:transform .2s ease, background .2s;
+  }
+  #themeToggle:checked ~ label .ts-thumb{transform:translateX(18px)}
+  #themeToggle:focus-visible ~ label .ts-track{outline:2px solid var(--focus);outline-offset:2px}
+  .ts-txt::after{content:'Dark'}
+  #themeToggle:checked ~ label .ts-txt::after{content:'Light'}
+  .ts-txt{min-width:34px}
+
+  /* ============================================================ LAYOUT */
+  main{padding:20px;max-width:1280px;margin:auto;display:flex;flex-direction:column;gap:18px}
+  .section-title{
+    font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--mut);margin:2px 2px 10px;
+  }
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:18px;box-shadow:var(--shadow);
+  }
+  .card > h2{
+    font-size:12px;margin:0 0 14px;color:var(--mut);
+    text-transform:uppercase;letter-spacing:.07em;font-weight:600;
+  }
+  .card-head{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .card-head h2{margin:0}
+
+  /* Featured cards: the psychology / process story stands next to P&L */
+  .card-focus{
+    border-color:color-mix(in srgb, var(--accent) 45%, var(--line));
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--accent) 9%, transparent) 0%, transparent 120px),
+      var(--card);
+  }
+  .card-focus > h2, .card-focus .card-head h2{color:var(--accent)}
+  .card-quality{border-color:color-mix(in srgb, var(--b) 40%, var(--line))}
+
+  /* ============================================================ FORMS */
+  .field{display:flex;flex-direction:column;min-width:0}
+  label{display:block;font-size:11.5px;color:var(--mut);margin-bottom:5px;font-weight:500}
+  input,select,textarea{
+    width:100%;background:var(--inset);color:var(--txt);
+    border:1px solid var(--line);border-radius:var(--radius-sm);
+    padding:10px 11px;font-size:14px;font-family:inherit;
+    transition:border-color .15s, box-shadow .15s, background .15s;
+  }
+  input::placeholder,textarea::placeholder{color:var(--mut-2)}
+  select{appearance:none;cursor:pointer;
+    background-image:linear-gradient(45deg,transparent 50%,var(--mut) 50%),linear-gradient(135deg,var(--mut) 50%,transparent 50%);
+    background-position:calc(100% - 16px) 55%,calc(100% - 11px) 55%;
+    background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:30px;}
+  input:hover,select:hover,textarea:hover{border-color:color-mix(in srgb,var(--accent) 40%,var(--line))}
+  input:focus-visible,select:focus-visible,textarea:focus-visible{
+    outline:none;border-color:var(--accent);
+    box-shadow:0 0 0 3px color-mix(in srgb,var(--focus) 45%,transparent);
+  }
+  textarea{resize:vertical;min-height:52px}
+
+  .grid{display:grid;gap:14px}
+  .form{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+  .add-inline{display:flex;gap:6px;margin-top:7px}
+  .add-inline input{flex:1}
+  .field-wide{grid-column:span 2}
+  @media (max-width:560px){.field-wide{grid-column:auto}}
+
+  .hint{font-size:11px;color:var(--mut);margin-top:5px}
+  .preview{
+    color:var(--mut);font-size:13px;margin-top:14px;
+    padding:11px 13px;border:1px dashed var(--line);border-radius:var(--radius-sm);
+    background:var(--card-2);
+  }
+
+  /* buttons */
+  button{
+    background:var(--grad);
+    color:#fff;border:0;border-radius:var(--radius-sm);
+    padding:10px 18px;font-weight:600;font-size:14px;font-family:inherit;cursor:pointer;
+    transition:filter .15s, transform .05s, box-shadow .15s;
+  }
+  button:hover{filter:brightness(1.06)}
+  button:active{transform:translateY(1px)}
+  button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+  button.ghost{background:transparent;color:var(--mut);border:1px solid var(--line);font-weight:500}
+  button.ghost:hover{color:var(--txt);border-color:var(--accent);filter:none}
+  button.small{padding:9px 12px}
+  button:disabled{opacity:.5;cursor:not-allowed}
+
+  .entry-actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:16px}
+  .entry-actions #add{padding-inline:26px}
+  #msg{font-size:13px;color:var(--mut)}
+  @media (max-width:560px){.entry-actions #add{flex:1 1 100%}}
+
+  /* filters */
+  .filters-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-items:end}
+  .filters-actions{display:flex;gap:10px;align-items:end}
+  .filters-actions button{flex:1}
+
+  /* ============================================================ CONFIDENCE BAR */
+  .cbar{display:flex;gap:6px}
+  .cbar button{
+    flex:1;padding:0;min-height:52px;font-weight:800;font-size:16px;
+    color:var(--txt);
+    background:color-mix(in srgb, var(--c) 14%, var(--inset));
+    border:1px solid color-mix(in srgb, var(--c) 40%, var(--line));
+    border-radius:var(--radius-sm);
+    transition:background .12s, color .12s, transform .05s, box-shadow .12s;
+  }
+  .cbar button:hover{background:color-mix(in srgb, var(--c) 26%, var(--inset))}
+  .cbar button.on{
+    background:var(--c);color:#0b1220;border-color:var(--c);
+    box-shadow:0 6px 16px -9px var(--c);
+  }
+  .cbar button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+  @media (max-width:560px){.cbar button{min-height:60px;font-size:18px}}
+
+  /* confidence mini-bar in the trades table */
+  .cmini{display:inline-flex;gap:2px;vertical-align:middle}
+  .cmini i{width:8px;height:13px;border-radius:2px;background:color-mix(in srgb,var(--mut) 40%,transparent);display:inline-block}
+
+  /* ============================================================ STAT CARDS */
+  .stats{grid-template-columns:repeat(auto-fit,minmax(158px,1fr))}
+  .stat{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:14px 15px;box-shadow:var(--shadow);position:relative;overflow:hidden;
+  }
+  .stat .l{font-size:11px;color:var(--mut);font-weight:500;letter-spacing:.01em}
+  .stat .v{font-size:24px;font-weight:700;margin-top:6px;letter-spacing:-.02em;color:var(--txt-strong)}
+  .stat .v.pos{color:var(--pos)}
+  .stat .v.neg{color:var(--neg)}
+  /* non-colour cue for positive / negative values */
+  .stat .v.pos::after, td.pos::after{content:"\25B2";font-size:.6em;margin-left:.34em;vertical-align:.12em;opacity:.85}
+  .stat .v.neg::after, td.neg::after{content:"\25BC";font-size:.6em;margin-left:.34em;vertical-align:.12em;opacity:.85}
+  #trendTbl td.pos::after, #trendTbl td.neg::after{content:none}
+
+  /* ============================================================ TABLES */
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+  th{color:var(--mut);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;
+     position:sticky;top:0;background:var(--card);}
+  tbody tr:hover td, tr:hover td{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+  td.pos{color:var(--pos);font-weight:600}
+  td.neg{color:var(--neg);font-weight:600}
+  .pos{color:var(--pos)}
+  .neg{color:var(--neg)}
+
+  /* pills — consistent quality colours, meaning also carried by the text label */
+  .pill{
+    display:inline-block;padding:3px 9px;border-radius:99px;font-size:11px;font-weight:600;
+    color:var(--pc,var(--mut));
+    background:color-mix(in srgb, var(--pc,var(--mut)) 16%, transparent);
+    border:1px solid color-mix(in srgb, var(--pc,var(--mut)) 38%, transparent);
+  }
+  .Win,.GoodWin{--pc:var(--g)}
+  .Loss,.BadLoss{--pc:var(--r)}
+  .BE,.BadWin{--pc:var(--y)}
+  .GoodLoss{--pc:var(--b)}
+
+  /* ============================================================ CHARTS */
+  .two{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px}
+  #trendChart,#curve{margin-top:4px}
+  svg{max-width:100%}
+  #trendChart svg{max-height:230px}
+  #curve svg{max-height:260px}
+  svg text{fill:var(--mut);font-size:10px}
+  #trendNote{margin:0 0 12px}
+  #trendNote b{font-weight:700}
+
+  /* legacy helpers kept for any inline JS usage */
+  .row{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
+  .row>div{min-width:150px}
+  .inline{display:flex;gap:6px}
+
+  /* selection + scrollbars */
+  /* brand accents */
+  header{border-bottom:1px solid var(--line);box-shadow:0 1px 0 color-mix(in srgb,var(--accent) 22%,transparent)}
+  .tab.on{border-bottom-color:transparent;border-image:var(--grad) 1;border-image-slice:1}
+  .card-focus{box-shadow:var(--shadow),0 0 0 1px color-mix(in srgb,var(--accent) 18%,transparent),0 18px 50px -32px var(--accent)}
+  ::selection{background:color-mix(in srgb,var(--accent) 40%,transparent)}
+  .scroll::-webkit-scrollbar{height:9px}
+  .scroll::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
+
+  @media (max-width:640px){
+    main{padding:14px}
+    .card{padding:15px}
+    header{padding:11px 14px}
+    .stat .v{font-size:21px}
+  }
+
+  /* ===== v3: auth, tabs, setup ===== */
+  [hidden]{display:none!important}
+  body.locked header, body.locked main{display:none}
+  #auth{display:none;min-height:100vh;place-items:center;padding:20px}
+  body.locked #auth{display:grid}
+  .auth-card{width:100%;max-width:400px}
+  .auth-card h1{font-size:20px;margin:10px 0 4px}
+  .auth-card .sub{color:var(--mut);margin:0 0 16px}
+  .auth-card .field{margin-bottom:12px}
+  .auth-card button.primary{width:100%;margin-top:4px}
+  .auth-err{color:var(--neg);font-size:13px;min-height:18px;margin-top:10px}
+  .link-btn{background:none;border:0;color:var(--accent);padding:0;font-weight:600;font-size:13px}
+  .link-btn:hover{filter:none;text-decoration:underline}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:-4px}
+  .tab{background:transparent;color:var(--mut);border:0;border-bottom:2px solid transparent;border-radius:0;padding:10px 16px;font-weight:600}
+  .tab:hover{filter:none;color:var(--txt)}
+  .tab.on{color:var(--txt-strong);border-bottom-color:var(--accent)}
+  .tabpane{display:flex;flex-direction:column;gap:18px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .chip{display:inline-flex;align-items:center;gap:4px;padding:5px 6px 5px 12px;border:1px solid var(--line);border-radius:99px;background:var(--inset);font-weight:600}
+  .chip-x{background:transparent;color:var(--mut);padding:2px 8px;border-radius:99px;font-size:12px}
+  .chip-x:hover{color:var(--neg);filter:none}
+  .pb-list{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(290px,1fr))}
+  .pb-item{border:1px solid var(--line);border-radius:var(--radius-sm);padding:13px 14px;background:var(--card-2)}
+  .pb-top{display:flex;flex-wrap:wrap;gap:6px 12px;justify-content:space-between;align-items:baseline}
+  .pb-top b{font-size:15px;color:var(--txt-strong)}
+  .pb-meta{font-size:12px;color:var(--mut)}
+  .pb-desc{margin-top:8px;color:var(--txt);white-space:pre-wrap;word-break:break-word}
+  .pb-actions{display:flex;gap:8px;margin-top:10px}
+  .tag{font-size:11px;font-weight:600;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 40%,var(--line));border-radius:99px;padding:1px 8px;margin-left:6px}
+  .setup-grid{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));align-items:start}
+
+  /* ===== screenshots ===== */
+  .shot-drop{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+  .thumbs{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+  .thumb{position:relative;width:110px;height:76px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .thumb button{position:absolute;top:3px;right:3px;padding:1px 7px;border-radius:99px;font-size:12px;background:rgba(0,0,0,.65);color:#fff}
+  #lb{position:fixed;inset:0;z-index:50;background:rgba(3,8,18,.86);display:grid;place-items:center;padding:18px;overflow:auto}
+  .lb-box{max-width:1100px;width:100%;max-height:100%;overflow:auto}
+  .lb-x{margin-bottom:10px;background:var(--card)}
+  #lbBody img{width:100%;height:auto;border-radius:10px;border:1px solid var(--line);margin-bottom:12px;display:block;background:var(--card)}
+  #lbBody .hint{color:#cbd5e1}
+  .shot-cell{white-space:nowrap}
+  .shot-cell button{padding:4px 9px;font-size:12px;margin-right:4px}
+
+  /* ===== dashboard scope switcher / members ===== */
+  .scope-card{padding:14px 18px}
+  .scope-head{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;justify-content:space-between;margin-bottom:10px}
+  .scope-head h2{margin:0;font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+  .scope{display:flex;flex-wrap:wrap;gap:8px}
+  .scope button{background:var(--inset);color:var(--mut);border:1px solid var(--line);padding:9px 15px;border-radius:99px;font-weight:600}
+  .scope button:hover{color:var(--txt);border-color:var(--accent);filter:none}
+  .scope button.on{background:var(--grad);color:#fff;border-color:transparent;box-shadow:0 8px 20px -12px var(--accent)}
+  .scope button.me:not(.on){border-color:color-mix(in srgb,var(--accent) 50%,var(--line));color:var(--txt)}
+  .mrow{cursor:pointer}
+  .mrow.sel td{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+  .mrow td:first-child{font-weight:700}
+  .foot-row td{border-top:1px solid var(--line);font-weight:700;color:var(--txt-strong)}
+  .diff{font-weight:700}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:12px;color:var(--mut)}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+
+  /* ---------------- auth: Google + email ---------------- */
+  .btn-google{
+    width:100%;display:flex;align-items:center;justify-content:center;gap:10px;
+    background:var(--card-2);color:var(--txt);border:1px solid var(--line);
+    padding:11px 16px;font-weight:600;
+  }
+  .btn-google:hover{border-color:color-mix(in srgb,var(--accent) 50%,var(--line));filter:none}
+  .btn-google svg{width:18px;height:18px;flex:none}
+  .or{
+    display:flex;align-items:center;gap:12px;margin:16px 0 14px;
+    color:var(--mut-2);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  }
+  .or::before,.or::after{content:'';flex:1;height:1px;background:var(--line)}
+  .auth-note{color:var(--mut);font-size:12px;margin:10px 0 0;line-height:1.5}
+  .auth-ok{color:var(--g);font-size:13px;min-height:18px;margin-top:10px}
+  .who-chip{
+    display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:99px;
+    background:var(--inset);border:1px solid var(--line);font-size:12.5px;color:var(--mut);
+    max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .who-chip b{color:var(--txt);font-weight:600}
+  body.locked #onboard{display:none}
+  body.onboarding #auth{display:none}
+  body.onboarding.locked #onboard{display:grid;min-height:100vh;place-items:center;padding:20px}
+  #onboard{display:none}
+
+  /* ---------------- admin ---------------- */
+  .tab.admin-tab{display:none}
+  body.is-admin .tab.admin-tab{display:inline-block}
+  .code-cell{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:700;letter-spacing:.04em}
+  .badge{
+    display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700;
+    border:1px solid var(--line);background:var(--inset);color:var(--mut);
+  }
+  .badge.live{color:var(--g);border-color:color-mix(in srgb,var(--g) 45%,var(--line))}
+  .badge.dead{color:var(--mut-2)}
+  .badge.role-superadmin{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 50%,var(--line))}
+  .badge.role-admin{color:var(--b);border-color:color-mix(in srgb,var(--b) 45%,var(--line))}
+  .new-code{
+    margin-top:12px;padding:14px;border-radius:var(--radius-sm);
+    border:1px dashed color-mix(in srgb,var(--accent) 50%,var(--line));background:var(--card-2);
+  }
+  .new-code b{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:19px;letter-spacing:.08em;color:var(--txt-strong)}
+</style>
+</head>
+<body class="locked">
+<div id="auth">
+  <form class="card auth-card" id="authForm" autocomplete="on">
+    <span class="logo" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke-linecap="round" stroke-linejoin="round"><defs><linearGradient id="vgA" x1="4" y1="6" x2="28" y2="26" gradientUnits="userSpaceOnUse"><stop stop-color="#a48cff"/><stop offset="1" stop-color="#6a48f2"/></linearGradient></defs><path d="M5 8l11 17L27 8" stroke="url(#vgA)" stroke-width="4.2"/><path d="M11 8l5 8 5-8" stroke="#22d3ee" stroke-width="3"/></svg></span>
+    <div class="wordmark" role="img" aria-label="VRV Trading"><b>VR<i>V</i></b><small>Trading</small></div>
+    <h1 id="authTitle">Log in</h1>
+    <p class="sub">VRV Trading Journal &middot; log it, review it, improve it.</p>
+
+    <button type="button" class="btn-google" id="googleGo"><svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h11.8c-.5 2.8-2 5.1-4.4 6.700v5.6h7.1c4.2-3.8 6.6-9.5 6.6-16.3z"/><path fill="#34A853" d="M24 46c6 0 11-2 14.6-5.4l-7.1-5.6c-2 1.3-4.5 2.1-7.5 2.1-5.8 0-10.6-3.9-12.4-9.1H4.3v5.8C7.9 41 15.4 46 24 46z"/><path fill="#FBBC05" d="M11.6 27.9c-.5-1.3-.7-2.8-.7-4.3s.3-3 .7-4.3v-5.8H4.3C2.8 16.5 2 20.1 2 23.6s.8 7.1 2.3 10.1l7.3-5.8z"/><path fill="#EA4335" d="M24 10.2c3.3 0 6.2 1.1 8.5 3.3l6.3-6.3C35 3.6 30 1.6 24 1.6 15.4 1.6 7.9 6.6 4.3 13.5l7.3 5.8c1.8-5.2 6.6-9.1 12.4-9.1z"/></svg><span id="googleTxt">Continue with Google</span></button>
+    <div class="or">or</div>
+
+    <div class="field"><label for="aEmail">Email</label><input id="aEmail" type="email" autocomplete="email" autocapitalize="none" required></div>
+    <div class="field"><label for="aPw">Password</label><input id="aPw" type="password" autocomplete="current-password" minlength="8" required></div>
+    <button class="primary" id="authGo" type="submit">Log in</button>
+
+    <div class="auth-err" id="authErr" role="alert"></div>
+    <div class="auth-ok" id="authOk" role="status"></div>
+    <div style="margin-top:6px;display:flex;gap:14px;flex-wrap:wrap">
+      <button type="button" class="link-btn" id="authSwitch">New here? Create an account</button>
+      <button type="button" class="link-btn" id="authForgot">Forgot password?</button>
+    </div>
+    <p class="auth-note" id="authNote">You still need an invite code from the journal owner to finish setting up an account.</p>
+  </form>
+</div>
+
+<!-- Signed in with Google/email, but no journal profile yet: claim a handle with an invite code. -->
+<div id="onboard">
+  <form class="card auth-card" id="onboardForm" autocomplete="off">
+    <span class="logo" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke-linecap="round" stroke-linejoin="round"><defs><linearGradient id="vgB" x1="4" y1="6" x2="28" y2="26" gradientUnits="userSpaceOnUse"><stop stop-color="#a48cff"/><stop offset="1" stop-color="#6a48f2"/></linearGradient></defs><path d="M5 8l11 17L27 8" stroke="url(#vgB)" stroke-width="4.2"/><path d="M11 8l5 8 5-8" stroke="#22d3ee" stroke-width="3"/></svg></span>
+    <div class="wordmark" role="img" aria-label="VRV Trading"><b>VR<i>V</i></b><small>Trading</small></div>
+    <h1>Set up your journal</h1>
+    <p class="sub">One last step &mdash; pick the name your team will see.</p>
+    <div style="margin-bottom:14px"><span class="who-chip">Signed in as&nbsp;<b id="obEmail"></b></span></div>
+
+    <div class="field"><label for="obUser">Username</label><input id="obUser" autocomplete="off" autocapitalize="none" maxlength="20" placeholder="3-20 letters, numbers or _" required></div>
+    <div class="field"><label for="obInv">Invite code</label><input id="obInv" autocomplete="off" placeholder="From the journal owner" required></div>
+    <div class="field"><label for="obCcy">Base currency</label><select id="obCcy"></select></div>
+    <button class="primary" id="obGo" type="submit">Create my journal</button>
+    <div class="auth-err" id="obErr" role="alert"></div>
+    <div style="margin-top:6px"><button type="button" class="link-btn" id="obCancel">Sign out</button></div>
+  </form>
+</div>
+<header>
+  <div class="brand">
+    <span class="logo" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke-linecap="round" stroke-linejoin="round"><defs><linearGradient id="vg" x1="4" y1="6" x2="28" y2="26" gradientUnits="userSpaceOnUse"><stop stop-color="#a48cff"/><stop offset="1" stop-color="#6a48f2"/></linearGradient></defs><path d="M5 8l11 17L27 8" stroke="url(#vg)" stroke-width="4.2"/><path d="M11 8l5 8 5-8" stroke="#22d3ee" stroke-width="3"/></svg></span>
+    <div class="wordmark" role="img" aria-label="VRV Trading Journal"><b>VR<i>V</i></b><small>Trading</small></div>
+  </div>
+  <div class="head-tools">
+    <div class="field head-name">
+      <label for="me">Signed in as</label>
+      <input id="me" readonly tabindex="-1">
+    </div>
+    <button class="ghost small" id="logout" type="button">Log out</button>
+    <div class="theme-switch">
+      <input type="checkbox" id="themeToggle" aria-label="Toggle light or dark theme">
+      <label for="themeToggle">
+        <span class="ts-track" aria-hidden="true"><span class="ts-thumb"></span></span>
+        <span class="ts-txt"></span>
+      </label>
+    </div>
+  </div>
+</header>
+
+<main>
+  <nav class="tabs" role="tablist">
+    <button class="tab" type="button" data-tab="journal" role="tab">Log Trade</button>
+    <button class="tab on" type="button" data-tab="dash" role="tab">Dashboard</button>
+    <button class="tab" type="button" data-tab="setup" role="tab">My Setup</button>
+    <button class="tab admin-tab" type="button" data-tab="admin" role="tab">Admin</button>
+  </nav>
+
+  <div class="tabpane" id="tab-journal" hidden>
+  <!-- ADD TRADE -->
+  <section class="card card-entry">
+    <h2>Log a completed trade</h2>
+    <div class="grid form">
+      <div class="field"><label for="date">Date (your local)</label><input type="date" id="date"></div>
+      <div class="field"><label for="ttime">Time trade was taken</label><input type="time" id="ttime"></div>
+      <div class="field"><label for="tz">Time zone (UTC/GMT)</label><select id="tz"></select><div class="hint" id="tzHint">Defaults to your saved time zone</div></div>
+      <div class="field"><label for="sess">Session</label><select id="sess"><option value="">Auto (from time)</option></select></div>
+      <div class="field"><label for="instr">Instrument</label>
+        <select id="instr"></select>
+        <div class="hint">Manage in <button type="button" class="link-btn" data-goto="setup">My Setup</button></div>
+      </div>
+      <div class="field"><label for="strat">Strategy (yours)</label>
+        <select id="strat"></select>
+        <div class="hint">Manage in <button type="button" class="link-btn" data-goto="setup">My Setup</button></div>
+      </div>
+      <div class="field"><label for="dir">Direction</label><select id="dir"><option>Long</option><option>Short</option></select></div>
+      <div class="field"><label for="entry">Entry</label><input type="number" step="any" id="entry" inputmode="decimal"></div>
+      <div class="field"><label for="sl">Initial SL (planned)</label><input type="number" step="any" id="sl" inputmode="decimal"></div>
+      <div class="field"><label for="fsl">Final SL (if trailed)</label><input type="number" step="any" id="fsl" inputmode="decimal"><div class="hint">Leave blank if not moved</div></div>
+      <div class="field"><label for="tp">Initial TP (planned)</label><input type="number" step="any" id="tp" inputmode="decimal"></div>
+      <div class="field"><label for="exit">TP taken (exit price)</label><input type="number" step="any" id="exit" inputmode="decimal"><div class="hint">Where you actually closed</div></div>
+      <div class="field"><label for="risk">Risk amount (optional)</label><input type="number" step="any" id="risk" inputmode="decimal"></div>
+      <div class="field"><label for="ccy">Currency</label><select id="ccy"></select><div class="hint">Your base currency by default</div></div>
+      <div class="field field-wide">
+        <label id="confLabel" for="cbar">Confidence: &ldquo;I was confident in this trade&rdquo;</label>
+        <input type="hidden" id="conf">
+        <div class="cbar" id="cbar" role="group" aria-labelledby="confLabel">
+          <button type="button" data-v="1" style="--c:#ef4444" aria-label="1 – Strongly disagree">1</button>
+          <button type="button" data-v="2" style="--c:#f97316" aria-label="2 – Disagree">2</button>
+          <button type="button" data-v="3" style="--c:#facc15" aria-label="3 – Neutral">3</button>
+          <button type="button" data-v="4" style="--c:#84cc16" aria-label="4 – Agree">4</button>
+          <button type="button" data-v="5" style="--c:#22c55e" aria-label="5 – Strongly agree">5</button>
+        </div>
+        <div class="hint" id="clabel">Tap a level: 1 Strongly disagree &middot; 5 Strongly agree</div>
+      </div>
+      <div class="field"><label for="quality">Trade quality</label><select id="quality"></select><div class="hint">Options follow the result</div></div>
+    </div>
+    <div class="field" style="margin-top:14px">
+      <label>Screenshots (optional, up to 4) &middot; saved to Google Drive</label>
+      <div class="shot-drop">
+        <button type="button" class="ghost small" id="shotBtn">&#128247; Add screenshots</button>
+        <input type="file" id="shotFile" accept="image/*" multiple hidden>
+        <span class="hint" style="margin:0">or paste an image (Ctrl/Cmd+V)</span>
+      </div>
+      <div class="thumbs" id="thumbs"></div>
+    </div>
+    <div class="field" style="margin-top:14px"><label for="notes">Notes</label><textarea id="notes" rows="2"></textarea></div>
+    <div class="preview" id="preview">Fill entry, initial SL and exit to preview.</div>
+    <div class="entry-actions"><button id="add">Add trade</button><span id="msg"></span></div>
+  </section>
+  </div><!-- /tab-journal -->
+
+  <div class="tabpane" id="tab-dash">
+  <!-- VIEW SWITCHER: team or any member -->
+  <section class="card scope-card">
+    <div class="scope-head"><h2>Dashboard view</h2><span class="hint" style="margin:0">Team-wide, just you, or any member &mdash; every number below follows this switch</span></div>
+    <div class="scope" id="scope" role="group" aria-label="Dashboard view"></div>
+  </section>
+
+  <!-- FILTERS -->
+  <section class="card card-filters">
+    <h2>Filters</h2>
+    <div class="filters-grid">
+      <div class="field"><label for="fTrader">View</label><select id="fTrader"><option value="__ALL__">Overall (whole team)</option></select></div>
+      <div class="field"><label for="fFrom">From</label><input type="date" id="fFrom"></div>
+      <div class="field"><label for="fTo">To</label><input type="date" id="fTo"></div>
+      <div class="field"><label for="fInstr">Instrument</label><select id="fInstr"><option value="">All</option></select></div>
+      <div class="field"><label for="fStrat">Strategy</label><select id="fStrat"><option value="">All</option></select></div>
+      <div class="field"><label for="fQual">Quality</label><select id="fQual"><option value="">All</option><option>Good Win</option><option>Bad Win</option><option>Good Loss</option><option>Bad Loss</option></select></div>
+      <div class="field"><label for="fConf">Confidence</label><select id="fConf"><option value="">All</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="0">Not rated</option></select></div>
+      <div class="field"><label for="fSess">Session</label><select id="fSess"><option value="">All</option><option>Asia</option><option>London</option><option>London/NY</option><option>New York</option><option>Off-hours</option><option value="__none">Not set</option></select></div>
+      <div class="field"><label for="fTrail">SL trailed</label><select id="fTrail"><option value="">All</option><option>Yes</option><option>No</option></select></div>
+      <div class="filters-actions">
+        <button class="ghost" id="reset">Reset</button>
+        <button class="ghost" id="refresh">&#8635; Refresh</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- MY ACCOUNT EQUITY -->
+  <section class="card" id="eqCard" hidden>
+    <h2>My account equity</h2>
+    <div class="grid stats" id="eqStats"></div>
+    <div class="scroll" id="eqChart" style="margin-top:10px"></div>
+    <div class="hint" id="eqNote" style="margin-top:6px"></div>
+  </section>
+
+  <!-- HEADLINE STATS -->
+  <section aria-label="Performance summary">
+    <div class="section-title">Performance &amp; discipline</div>
+    <div class="grid stats" id="stats"></div>
+  </section>
+
+  <!-- YOU vs TEAM -->
+  <section class="card" id="vsCard" hidden><h2 id="vsTitle">You vs team</h2><div class="scroll" id="vsTeam"></div></section>
+
+  <!-- PSYCHOLOGY / IMPROVEMENT (featured) -->
+  <section class="card card-focus">
+    <div class="card-head">
+      <h2>Psychology &amp; improvement over time</h2>
+      <div class="field" style="min-width:130px"><label for="trendBy">Group by</label><select id="trendBy"><option value="week">Week</option><option value="month">Month</option></select></div>
+    </div>
+    <div id="trendNote" class="preview" style="border-style:solid"></div>
+    <div id="trendChart"></div>
+    <div class="scroll" id="trendTbl" style="margin-top:12px"></div>
+  </section>
+
+  <div class="two">
+    <div class="card"><h2>Equity curve (cumulative R)</h2><div id="curve"></div><div class="legend" id="curveLegend"></div></div>
+    <div class="card card-quality"><h2>Trade quality</h2><div class="scroll" id="qual"></div></div>
+  </div>
+
+  <section class="card"><h2>Team members &mdash; side by side <span class="hint" style="text-transform:none;letter-spacing:0;font-weight:400">(click a member to open their dashboard)</span></h2><div class="scroll" id="board"></div></section>
+
+  <div class="two">
+    <div class="card"><h2>By instrument</h2><div class="scroll" id="byInstr"></div></div>
+    <div class="card"><h2>By strategy</h2><div class="scroll" id="byStrat"></div></div>
+    <div class="card"><h2>By session (UTC-based)</h2><div class="scroll" id="bySess"></div></div>
+    <div class="card"><h2>By confidence level</h2><div class="scroll" id="byConf"></div></div>
+    <div class="card"><h2>Trailed vs not trailed</h2><div class="scroll" id="byTrail"></div></div>
+  </div>
+
+  <section class="card"><h2>Strategy playbook</h2><div id="playbook"></div></section>
+
+  <section class="card"><h2>Trades</h2><div class="scroll" id="tbl"></div></section>
+  </div><!-- /tab-dash -->
+
+  <div class="tabpane" id="tab-setup" hidden>
+    <div class="setup-grid">
+      <section class="card">
+        <h2>My instruments</h2>
+        <div class="hint" style="margin:-6px 0 10px">The markets you trade. You can only log trades on instruments listed here. Separate several with commas.</div>
+        <div class="add-inline" style="margin-top:0"><input id="setInstr" placeholder="e.g. EURUSD, XAUUSD, NAS100" aria-label="Instrument names"><button id="setInstrAdd" type="button">Add</button></div>
+        <div class="chips" id="myInstrList"></div>
+      </section>
+      <section class="card">
+        <h2>Add / edit a strategy</h2>
+        <div class="field"><label for="stName">Strategy name</label><input id="stName" placeholder="e.g. London breakout" autocomplete="off"></div>
+        <div class="field" style="margin-top:12px"><label for="stDesc">Description (your rules: entry, stop, target, when NOT to trade)</label><textarea id="stDesc" rows="5" placeholder="Write the rules you promise to follow. &quot;Good&quot; trades = you followed these."></textarea></div>
+        <div class="entry-actions"><button id="stSave" type="button">Save strategy</button><span class="hint">Saving with an existing name updates its description.</span></div>
+      </section>
+    </div>
+    <section class="card">
+      <h2>Equity: deposits &amp; withdrawals</h2>
+      <div class="hint" style="margin:-6px 0 10px">Your equity = deposits &minus; withdrawals + the P&amp;L of every trade you log (in that currency). Add money when you top up the account, record a withdrawal when you take money out.</div>
+      <div class="setup-grid">
+        <div class="field"><label for="fdType">Type</label><select id="fdType"><option>Deposit</option><option>Withdrawal</option></select></div>
+        <div class="field"><label for="fdAmt">Amount</label><input id="fdAmt" type="number" step="any" min="0" inputmode="decimal" placeholder="e.g. 5000"></div>
+        <div class="field"><label for="fdCcy">Currency</label><select id="fdCcy"></select></div>
+        <div class="field"><label for="fdDate">Date</label><input id="fdDate" type="date"></div>
+      </div>
+      <div class="field" style="margin-top:12px"><label for="fdNote">Note (optional)</label><input id="fdNote" maxlength="200" placeholder="e.g. Monthly top-up, profit payout"></div>
+      <div class="entry-actions"><button id="fdAdd" type="button">Record</button><span class="hint" id="fdMsg"></span></div>
+      <div class="scroll" id="fdList" style="margin-top:12px"></div>
+    </section>
+    <section class="card">
+      <h2>Account defaults</h2>
+      <div class="setup-grid">
+        <div class="field"><label for="setCcy">Base currency</label>
+          <div class="add-inline" style="margin-top:0"><select id="setCcy"></select><button id="setCcySave" type="button">Save</button></div>
+          <div class="hint" id="setCcyMsg">Used to pre-fill the currency on new trades.</div></div>
+        <div class="field"><label for="setTz">Time zone (UTC/GMT offset)</label>
+          <div class="add-inline" style="margin-top:0"><select id="setTz"></select><button id="setTzSave" type="button">Save</button></div>
+          <div class="hint" id="setTzMsg">Every trade is also stored in UTC so trades from different countries line up. Daylight saving? Change the offset when your clocks change.</div></div>
+      </div>
+    </section>
+    <section class="card"><h2>My strategies</h2><div class="pb-list" id="myStratList"></div></section>
+  </div><!-- /tab-setup -->
+
+  <!-- ============================ ADMIN (superadmin / admin only) -->
+  <div class="tabpane" id="tab-admin" hidden>
+    <section class="card card-focus">
+      <div class="card-head"><h2>Create an invite code</h2><span class="hint" id="adminWho"></span></div>
+      <p class="hint" style="margin:0 0 12px">Nobody can create an account without one of these. Send a code to the person, they sign in with Google (or email), then paste it on the setup screen.</p>
+      <div class="grid form">
+        <div class="field"><label for="ivNote">Who is it for? (optional)</label><input id="ivNote" maxlength="200" placeholder="e.g. Sam &ndash; swing desk"></div>
+        <div class="field"><label for="ivUses">How many people can use it</label><input id="ivUses" type="number" min="1" max="500" step="1" value="1" inputmode="numeric"></div>
+        <div class="field"><label for="ivDays">Expires in (days)</label><input id="ivDays" type="number" min="0" max="3650" step="1" placeholder="Blank = never" inputmode="numeric"></div>
+        <div class="field"><label for="ivCode">Custom code (optional)</label><input id="ivCode" maxlength="64" placeholder="Leave blank to generate one" autocapitalize="characters"></div>
+      </div>
+      <div class="entry-actions"><button id="ivCreate" type="button">Create code</button><span class="hint" id="ivMsg"></span></div>
+      <div class="new-code" id="ivNew" hidden></div>
+    </section>
+
+    <section class="card" style="margin-top:18px">
+      <div class="card-head"><h2>Invite codes</h2><button class="ghost small" id="ivRefresh" type="button">&#8635; Refresh</button></div>
+      <div class="scroll" id="ivList"></div>
+    </section>
+
+    <section class="card" style="margin-top:18px">
+      <div class="card-head"><h2>Members</h2><span class="hint">Disabling signs the member out immediately. Deleting also removes their trades and screenshots.</span></div>
+      <div class="scroll" id="usrList"></div>
+    </section>
+  </div><!-- /tab-admin -->
+</main>
+<div id="lb" hidden><div class="lb-box"><button type="button" class="ghost small lb-x" id="lbClose">Close &#10005;</button><div id="lbBody"></div></div></div>
+<script src="/assets/app.js" defer></script>
+</body>
+</html>
