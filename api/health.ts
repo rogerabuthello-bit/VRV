@@ -261,6 +261,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           : bad('migration 0006 not applied - run supabase/migrations/0006_brokers.sql. '
                 + 'Until then every instrument belongs to one unnamed broker.');
 
+        // 0006 adds the column on instruments; 0007 adds the stored list on the
+        // trader. Checking only the first reported success while brokers still
+        // vanished on switching away, so check both.
+        const brokerList = await rest('users?select=brokers&limit=1');
+        checks.brokerList = brokerList.ok
+          ? ok('recorded')
+          : bad('migration 0007 not applied - run supabase/migrations/0007_broker_list.sql. '
+                + 'Until then a new broker disappears when you switch away from it.');
+
+        const poi = await rest('trades?select=poi&limit=1');
+        const stratPoi = await rest('strategies?select=pois&limit=1');
+        checks.pointsOfInterest = poi.ok && stratPoi.ok
+          ? ok('recorded')
+          : bad('migration 0008 not applied - run supabase/migrations/0008_poi.sql.');
+
         const sa = await rest('users?select=username&role=eq.superadmin&limit=1');
         if (sa.ok) {
           const rows = (await sa.json()) as { username: string }[];
