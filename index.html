@@ -436,6 +436,30 @@
   .dirbtn.short:hover,.dirbtn.short.on{background:color-mix(in srgb,var(--r) 20%,var(--inset));border-color:var(--r);color:var(--r)}
   .dirbtn.on{box-shadow:inset 0 0 0 1px currentColor}
 
+  /* ---------------- monthly ledger calendar ---------------- */
+  .cal{width:100%;border-collapse:collapse;table-layout:fixed;min-width:760px}
+  .cal th{
+    height:28px;text-align:left;padding:0 10px;
+    font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;color:var(--mut-2);
+  }
+  .cal td{
+    height:auto;vertical-align:top;padding:9px 10px;border:1px solid var(--line);
+    background:var(--card-2);
+  }
+  .cal td.out{background:transparent;color:var(--mut-2)}
+  .cal td.win{background:color-mix(in srgb,var(--g) 10%,var(--card-2));border-color:color-mix(in srgb,var(--g) 32%,var(--line))}
+  .cal td.loss{background:color-mix(in srgb,var(--r) 10%,var(--card-2));border-color:color-mix(in srgb,var(--r) 32%,var(--line))}
+  .cal td.week{background:var(--card);text-align:right}
+  .cal .dnum{font-family:var(--font-mono);font-size:11px;color:var(--mut)}
+  .cal .dr{float:right;font-family:var(--font-mono);font-size:10px;font-weight:600;padding:1px 5px;border-radius:2px}
+  .cal .dr.pos{background:color-mix(in srgb,var(--g) 16%,transparent);color:var(--g)}
+  .cal .dr.neg{background:color-mix(in srgb,var(--r) 16%,transparent);color:var(--r)}
+  .cal .dpnl{display:block;margin-top:16px;font-family:var(--font-mono);font-size:13px;font-weight:600}
+  .cal .dn{display:block;font-family:var(--font-mono);font-size:9.5px;letter-spacing:.06em;color:var(--mut-2);text-transform:uppercase}
+  .cal td.week .dpnl{margin-top:4px}
+  .runstrip{display:inline-flex;gap:3px;vertical-align:-2px;margin-left:8px}
+  .runstrip i{width:11px;height:11px;border-radius:2px;display:inline-block}
+
   /* ---------------- rules + tags ---------------- */
   .rulebox{margin-top:16px;padding:14px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--card-2)}
   .rules{display:flex;flex-direction:column;gap:9px;margin-top:4px}
@@ -730,6 +754,7 @@
   <nav class="tabs" role="tablist">
     <button class="tab" type="button" data-tab="journal" role="tab">Log Trade</button>
     <button class="tab on" type="button" data-tab="dash" role="tab">Dashboard</button>
+    <button class="tab" type="button" data-tab="risk" role="tab">Risk &amp; Calendar</button>
     <button class="tab" type="button" data-tab="setup" role="tab">My Setup</button>
     <button class="tab admin-tab" type="button" data-tab="admin" role="tab">Admin</button>
   </nav>
@@ -939,6 +964,41 @@
 
   <section class="card"><h2>Trades</h2><div class="scroll" id="tbl"></div></section>
   </div><!-- /tab-dash -->
+
+  <div class="tabpane" id="tab-risk" hidden>
+    <div class="pagehead">
+      <div>
+        <div class="crumb">Risk management &amp; discipline &middot; <b>Sizing engine &amp; calendar</b></div>
+        <h1>Risk Architect &amp; Ledger</h1>
+      </div>
+      <div class="entry-actions" style="margin:0">
+        <button class="ghost small" id="calPrev" type="button" aria-label="Previous month">&#8249;</button>
+        <span class="badge" id="calLabel">—</span>
+        <button class="ghost small" id="calNext" type="button" aria-label="Next month">&#8250;</button>
+      </div>
+    </div>
+
+    <section class="card card-focus">
+      <div class="card-head"><h2>Position parameters</h2><span class="hint" id="rcEquity"></span></div>
+      <div class="grid form">
+        <div class="field"><label for="rcBroker">Broker</label><select id="rcBroker"></select></div>
+        <div class="field"><label for="rcInstr">Instrument</label><select id="rcInstr"></select></div>
+        <div class="field"><label for="rcPct">Risk (% of equity)</label><input type="number" step="0.05" min="0.01" max="100" id="rcPct" inputmode="decimal"></div>
+        <div class="field"><label for="rcEntry">Entry</label><input type="number" step="any" id="rcEntry" inputmode="decimal"></div>
+        <div class="field"><label for="rcSl">Stop loss</label><input type="number" step="any" id="rcSl" inputmode="decimal"></div>
+        <div class="field"><label for="rcTp">Target</label><input type="number" step="any" id="rcTp" inputmode="decimal"></div>
+      </div>
+      <div class="grid stats" id="rcOut" style="margin-top:14px"></div>
+      <div class="hint" id="rcNote" style="margin-top:8px"></div>
+    </section>
+
+    <section class="card" style="margin-top:18px">
+      <div class="card-head"><h2 id="calTitle">Performance ledger</h2></div>
+      <div class="grid stats" id="calStats"></div>
+      <div class="scroll" id="calGrid" style="margin-top:14px"></div>
+      <div class="hint" id="calNote" style="margin-top:10px"></div>
+    </section>
+  </div><!-- /tab-risk -->
 
   <div class="tabpane" id="tab-setup" hidden>
     <div class="pagehead">

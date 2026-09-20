@@ -119,6 +119,17 @@ With a spec set, the risk amount on a trade is derived from the lot size
 rather than typed, which makes PnL exact instead of an estimate. Without one,
 you type the risk amount as before.
 
+### Risk & Calendar
+
+A standalone sizing engine — pick broker, instrument, risk %, entry, stop and
+target, and it returns the lot size, money at risk, stop distance and R:R
+without logging anything. It runs the same maths as the entry form and carries
+the same warning when the size sits outside your best-performing risk band.
+
+Beneath it, a month of trading at a glance. Weekdays only, each day showing R,
+money and execution count, coloured green or red, with a week total on the
+right and a strip of the last ten sessions underneath.
+
 ### Brokers
 
 Pip values and lot steps are set by the broker, not the market, so a spec

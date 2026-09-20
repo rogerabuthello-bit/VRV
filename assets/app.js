@@ -158,9 +158,10 @@ function showOnboarding(d){
 }
 
 function showTab(n){
-  ['journal','dash','setup','admin'].forEach(t=>{ $('tab-'+t).hidden = t!==n; });
+  ['journal','dash','risk','setup','admin'].forEach(t=>{ $('tab-'+t).hidden = t!==n; });
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on', b.dataset.tab===n));
   if(n==='admin') loadAdmin();
+  if(n==='risk') renderRiskTab();
 }
 document.querySelectorAll('[data-tab],[data-goto]').forEach(b=>b.onclick=()=>{ showTab(b.dataset.tab||b.dataset.goto); window.scrollTo({top:0}); });
 $('logout').onclick = signOut;
@@ -744,6 +745,155 @@ function updateRuleHint(){
     : `${n} of ${list.length} followed &mdash; <span class="neg">${list.length-n} broken</span>.`;
 }
 $('strat').addEventListener('change', () => renderRules());
+
+/* ================= Risk Architect & Ledger ================= */
+let CAL_MONTH = null;                       // Date pinned to the 1st of the shown month
+
+/** Standalone sizing engine: same maths as the entry form, no trade required. */
+function renderRiskCalc(){
+  const list = myBrokers(), label = b => b || '(no broker set)';
+  if($('rcBroker').options.length !== list.length){
+    $('rcBroker').innerHTML = list.map(b=>`<option value="${esc(b)}">${esc(label(b))}</option>`).join('');
+    $('rcBroker').value = MYBROKER;
+  }
+  const brk = $('rcBroker').value || '';
+  const names = INSTR.filter(i=>i.trader===ME && (i.broker||'')===brk).map(i=>i.name).sort();
+  const keep = $('rcInstr').value;
+  $('rcInstr').innerHTML = '<option value="">— select —</option>' + names.map(n=>`<option>${esc(n)}</option>`).join('');
+  if(names.includes(keep)) $('rcInstr').value = keep;
+  if(!$('rcPct').value) $('rcPct').value = MYRISK;
+
+  const sp = INSTR.find(i=>i.trader===ME && i.name===$('rcInstr').value && (i.broker||'')===brk) || null;
+  const ccy = MYCCY, equity = equityIn(ccy);
+  $('rcEquity').textContent = 'Equity slice: ' + fmt(equity) + ' ' + ccy;
+
+  const entry=+$('rcEntry').value, sl=+$('rcSl').value;
+  const tp=$('rcTp').value===''?null:+$('rcTp').value;
+  const pct=+$('rcPct').value||MYRISK;
+  const cell=(l,v,k='',lead=false)=>`<div class="stat${lead?' lead':''}"><div class="l">${l}</div><div class="v ${k}">${v}</div></div>`;
+
+  if(!hasSpec(sp)){
+    $('rcOut').innerHTML='';
+    $('rcNote').textContent = brk || names.length
+      ? 'Pick an instrument with a pip value set in My Setup.'
+      : 'Add a broker and its instruments in My Setup first.';
+    return;
+  }
+  if($('rcEntry').value===''||$('rcSl').value===''||entry===sl||equity<=0){
+    $('rcOut').innerHTML='';
+    $('rcNote').textContent = equity<=0
+      ? 'Record your starting deposit in My Setup and this can size against it.'
+      : 'Fill entry and stop loss to size a position.';
+    return;
+  }
+
+  const stopPips=Math.abs(entry-sl)/sp.pipSize;
+  const riskMoney=equity*pct/100;
+  const lots=lotsForRisk(entry,sl,riskMoney,sp);
+  const m=v=>fmt(v)+' '+esc(ccy);
+  let html = cell('Recommended size', lots>0?fmt(lots,2)+' lots':'too small', lots>0?'':'neg', true)
+    + cell('Risk value', m(riskMoney), 'neg')
+    + cell('Stop distance', fmt(stopPips,1)+' pips')
+    + cell('Equity', m(equity));
+  if(tp!==null && isFinite(tp)){
+    const rewardPips=Math.abs(tp-entry)/sp.pipSize;
+    html += cell('Upside gain', m(rewardPips*sp.valuePerPip*(lots||0)), 'pos')
+          + cell('Planned R:R', '1:'+fmt(rewardPips/stopPips));
+  }
+  $('rcOut').innerHTML = html;
+  $('rcNote').innerHTML = riskVerdict(pct) || 'Within your plan.';
+}
+['rcBroker','rcInstr','rcPct','rcEntry','rcSl','rcTp'].forEach(id=>
+  $(id).addEventListener('input', renderRiskCalc));
+$('rcBroker').addEventListener('change', renderRiskCalc);
+
+/** A month of trading at a glance: the shape of your discipline, day by day. */
+function renderCalendar(){
+  const mine = myTrades();
+  if(!CAL_MONTH){
+    const last = mine.length ? mine[mine.length-1].date : null;
+    CAL_MONTH = last ? new Date(last+'T00:00:00Z') : new Date();
+    CAL_MONTH = new Date(Date.UTC(CAL_MONTH.getUTCFullYear(), CAL_MONTH.getUTCMonth(), 1));
+  }
+  const y=CAL_MONTH.getUTCFullYear(), mo=CAL_MONTH.getUTCMonth();
+  const name = CAL_MONTH.toLocaleDateString('en-GB',{month:'long',year:'numeric',timeZone:'UTC'});
+  $('calLabel').textContent = name.toUpperCase();
+  $('calTitle').textContent = name + ' performance ledger';
+
+  const byDay = {};
+  mine.forEach(t=>{
+    const d = new Date(t.date+'T00:00:00Z');
+    if(d.getUTCFullYear()!==y || d.getUTCMonth()!==mo) return;
+    (byDay[t.date] = byDay[t.date] || []).push(t);
+  });
+  const days = Object.values(byDay);
+  const green = days.filter(d=>d.reduce((a,t)=>a+(+t.r||0),0) > 0).length;
+  const red   = days.filter(d=>d.reduce((a,t)=>a+(+t.r||0),0) < 0).length;
+  const all   = Object.values(byDay).flat();
+  const st    = calc(all);
+  const pnl   = all.reduce((a,t)=>a+(+t.pnl||0),0);
+  const cell=(l,v,k='')=>`<div class="stat"><div class="l">${l}</div><div class="v ${k}">${v}</div></div>`;
+  $('calStats').innerHTML =
+    cell('Traded days', days.length) + cell('Green days', green, green?'pos':'') +
+    cell('Red days', red, red?'neg':'') +
+    cell('Win rate', st.winRate==null?'–':fmt(st.winRate,1)+'%', st.winRate>=50?'pos':'neg') +
+    cell('Net R', fmt(st.totalR), cls(st.totalR)) +
+    cell('Net P&L', all.length?fmt(pnl)+' '+esc(MYCCY):'–', cls(pnl));
+
+  // Monday-first grid, weekends folded away: markets and journals both rest.
+  const first = new Date(Date.UTC(y,mo,1));
+  const lead = (first.getUTCDay()+6)%7;
+  const start = new Date(Date.UTC(y,mo,1-lead));
+  const end = new Date(Date.UTC(y,mo+1,0));
+  const weeks = [];
+  for(let cur=new Date(start); cur<=end || cur.getUTCDay()!==1; cur.setUTCDate(cur.getUTCDate()+1)){
+    if(cur.getUTCDay()===1) weeks.push([]);
+    if(cur.getUTCDay()===0 || cur.getUTCDay()===6) continue;
+    if(!weeks.length) weeks.push([]);
+    weeks[weeks.length-1].push(new Date(cur));
+    if(cur > end && cur.getUTCDay()===5) break;
+  }
+  const iso = d => d.toISOString().slice(0,10);
+  let html = '<table class="cal"><tr><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th style="text-align:right">Week</th></tr>';
+  // A leading or trailing week wholly outside the month is just an empty row.
+  const shown = weeks.filter(wk => wk.some(d => d.getUTCMonth()===mo));
+  shown.forEach((wk,i)=>{
+    if(!wk.length) return;
+    let wr=0, wp=0, any=false;
+    html += '<tr>';
+    wk.forEach(d=>{
+      const inMonth = d.getUTCMonth()===mo;
+      const rows = inMonth ? (byDay[iso(d)]||[]) : [];
+      const r = rows.reduce((a,t)=>a+(+t.r||0),0);
+      const money = rows.reduce((a,t)=>a+(+t.pnl||0),0);
+      if(rows.length){ wr+=r; wp+=money; any=true; }
+      const klass = !inMonth ? 'out' : rows.length ? (r>0?'win':r<0?'loss':'') : '';
+      html += `<td class="${klass}">`
+        + `<span class="dnum">${inMonth?d.getUTCDate():''}</span>`
+        + (rows.length?`<span class="dr ${cls(r)}">${r>0?'+':''}${fmt(r,1)}R</span>`:'')
+        + (rows.length
+            ? `<span class="dpnl ${cls(money)}">${money?fmt(money)+' '+esc(MYCCY):fmt(r,2)+'R'}</span>`
+              + `<span class="dn">${rows.length} execution${rows.length>1?'s':''}</span>`
+            : inMonth ? '<span class="dn" style="margin-top:16px;display:block">no trades</span>' : '')
+        + '</td>';
+    });
+    html += `<td class="week"><span class="dn">Week ${i+1}</span>`
+      + (any?`<span class="dpnl ${cls(wp||wr)}">${wp?fmt(wp)+' '+esc(MYCCY):fmt(wr,2)+'R'}</span><span class="dn">${wr>0?'+':''}${fmt(wr,1)}R net</span>`:'<span class="dpnl" style="color:var(--mut-2)">—</span>')
+      + '</td></tr>';
+  });
+  $('calGrid').innerHTML = html + '</table>';
+
+  // Recent run: the last ten sessions, newest on the right.
+  const recent = Object.keys(byDay).sort().slice(-10)
+    .map(k => byDay[k].reduce((a,t)=>a+(+t.r||0),0));
+  $('calNote').innerHTML = days.length
+    ? `Recent run <span class="runstrip">${recent.map(r=>`<i style="background:${r>0?'var(--g)':r<0?'var(--r)':'var(--mut-2)'}"></i>`).join('')}</span>`
+    : 'No trades logged this month.';
+}
+$('calPrev').onclick = () => { CAL_MONTH.setUTCMonth(CAL_MONTH.getUTCMonth()-1); renderCalendar(); };
+$('calNext').onclick = () => { CAL_MONTH.setUTCMonth(CAL_MONTH.getUTCMonth()+1); renderCalendar(); };
+
+function renderRiskTab(){ renderRiskCalc(); renderCalendar(); }
 
 /* ---------------- risk intelligence ----------------
  * Everything here is measured from the trader's OWN history. Sizing advice
