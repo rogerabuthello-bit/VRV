@@ -336,10 +336,16 @@ function load(){
     MYTZ=toOffsetTz(d.tz||BROWSER_TZ); if(d.tz!==MYTZ) api('saveTimezone',MYTZ).catch(()=>{});
     MYCCY=d.ccy||guessCcy(); if(!d.ccy) api('saveCurrency',MYCCY).catch(()=>{});
     ALL=d.trades; FUNDS=d.funds||[]; INSTR=d.instruments; STRATS=d.strategies; MEMBERS=d.members||[];
+    MYRISK=+d.riskPct||1;
+    /*
+     * Brokers first: the instrument list is filtered by the selected broker,
+     * which is read off #brokerSel. Filling the form before that select has
+     * any options read the broker as "", matched no instrument, and left the
+     * instrument dropdown empty until something happened to refill it.
+     */
+    MYBROKER=d.broker||''; BROKERS=d.brokers||[]; POIS=d.pois||[]; fillBrokers();
     fillForm(); fillFilters();
     if(!SCOPE_TOUCHED){ $('fTrader').value = (CAN_TEAM && !TEAM_HIDDEN && !ALL.some(t=>t.trader===ME)) ? '__ALL__' : ME; }
-    MYRISK=+d.riskPct||1;
-    MYBROKER=d.broker||''; BROKERS=d.brokers||[]; POIS=d.pois||[]; fillBrokers();
     fillTz(); fillCcy(); fillExitReason(); fillEmotions(); renderMistakes(); renderRules(); fillPois();
     render(); renderSetup(); recalcSize();
     if(!EDITING) setDir($('dir').value || 'Long');
@@ -1245,6 +1251,10 @@ function updateQuality(){
  * trader actually cares about, so it is counted from the old figure to
  * the new one in the middle of the screen - green if the trade added,
  * red if it took away.
+ *
+ * It runs off the P&L the save returns rather than waiting for the
+ * reload to come back, so it lands with the button press instead of a
+ * round trip later, and shows up even if the reload is slow or fails.
  * ---------------------------------------------------------------- */
 let TALLY_TIMER = null, TALLY_RAF = null;
 function hideTally(){
@@ -1255,24 +1265,43 @@ function hideTally(){
 $('tally').onclick = hideTally;
 document.addEventListener('keydown', e => { if(e.key==='Escape' && !$('tally').hidden) hideTally(); });
 
-function showTally(from, to, ccy){
-  const delta = to - from;
-  // Nothing moved, so there is nothing worth interrupting the screen for.
-  if(Math.abs(delta) < 0.005) return;
+/**
+ * @param from   balance before the trade, in `ccy`
+ * @param delta  money the trade moved the account by; null when the trade
+ *               carries no P&L at all, which is worth saying rather than
+ *               silently showing nothing
+ * @param note   the R line, shown under the figure
+ * @param won    colours the panel when there is no money to colour it by
+ */
+function showTally(from, delta, ccy, note, won){
   const el = $('tally');
   hideTally();
-  el.classList.toggle('pos', delta >= 0);
-  el.classList.toggle('neg', delta < 0);
-  $('tallyLbl').textContent = 'Balance' + (ccy ? ' \u00b7 ' + ccy : '');
-  $('tallyDelta').textContent = (delta >= 0 ? '+' : '\u2212') + fmt(Math.abs(delta));
+  const money = delta !== null && isFinite(delta);
+  const up = money ? delta >= 0 : !!won;
+  el.classList.toggle('pos', up);
+  el.classList.toggle('neg', !up);
+  $('tallyLbl').textContent = money
+    ? 'Balance' + (ccy ? ' \u00b7 ' + ccy : '')
+    : 'Trade logged';
+  $('tallyDelta').textContent = money
+    ? (delta >= 0 ? '+' : '\u2212') + fmt(Math.abs(delta)) + (note ? '  \u00b7  ' + note : '')
+    : (note || '') + ' \u00b7 no P&L: set a risk amount or lot size';
+  el.hidden = false;
+
+  if(!money){
+    // Nothing to count, so show the result itself and leave it a moment.
+    $('tallyNum').textContent = note ? note.replace(/\s.*$/, '') : '\u2013';
+    TALLY_TIMER = setTimeout(hideTally, 2600);
+    return;
+  }
+
+  const to = from + delta;
   // Paint the starting figure before the first frame, so the panel never
   // opens on the placeholder dash.
   $('tallyNum').textContent = fmt(from);
-  el.hidden = false;
-
   const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const land = () => { $('tallyNum').textContent = fmt(to); TALLY_TIMER = setTimeout(hideTally, 2400); };
-  if(still){ land(); return; }
+  const land = () => { $('tallyNum').textContent = fmt(to); TALLY_TIMER = setTimeout(hideTally, 2600); };
+  if(still || Math.abs(delta) < 0.005){ land(); return; }
 
   const ms = 900, t0 = performance.now();
   const step = now => {
@@ -1295,8 +1324,13 @@ $('add').onclick = () => {
     $(wrongWay.bad[0]).focus();
     return;
   }
-  // Read the balance before the trade lands, so the tally has somewhere to count from.
+  /*
+   * Read the balance before the trade lands, so the tally has somewhere to
+   * count from. An edit only moves the account by the difference it makes,
+   * so its previous P&L comes off the delta.
+   */
   const tallyCcy = $('ccy').value, balBefore = equityIn(tallyCcy);
+  const wasPnl = EDITING ? (Number((ALL.find(x=>x.id===EDITING)||{}).pnl) || 0) : 0;
   $('add').disabled=true; $('msg').textContent=SHOTS.length?'Uploading screenshots…':'Saving…';
   const saving = EDITING
     ? api('updateTrade', EDITING, t)
@@ -1307,7 +1341,11 @@ $('add').onclick = () => {
     if(EDITING) endEdit();
     $('msg').textContent=`${verb}: ${r.outcome} ${fmt(r.r)}R${r.trailed==='Yes'?' (trailed)':''} · ${r.session}`;
     ['entry','sl','fsl','tp','exit','risk','lots','comm','notes'].forEach(i=>$(i).value=''); COMM_TOUCHED=false; $('quality').value=''; $('ttime').value=''; $('xtime').value=''; $('xdate').value=''; $('xreason').value=''; $('emotion').value=''; $('sess').value=''; fillPois(''); PICKED=[]; renderMistakes(); renderRules(); setConf(''); SHOTS=[]; renderThumbs(); preview(); tzPreview();
-    load().then(()=>showTally(balBefore, equityIn(tallyCcy), tallyCcy)).catch(fail);
+    // Straight off the save response, so it lands with the press rather than
+    // after the reload; '' means the trade carries no P&L at all.
+    const gained = (r.pnl === '' || r.pnl == null || isNaN(Number(r.pnl))) ? null : Number(r.pnl) - wasPnl;
+    showTally(balBefore, gained, tallyCcy, `${fmt(r.r)}R ${r.outcome}`, Number(r.r) >= 0);
+    load().catch(fail);
   }).catch(e=>{ $('add').disabled=false; const m=(e&&e.message)||String(e); if(/AUTH/.test(m)) return fail(e); $('msg').textContent='Error: '+m; });
 };
 function startEdit(id){
