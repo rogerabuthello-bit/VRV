@@ -686,6 +686,28 @@
   .note-in b{color:var(--mut-2);font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
   tr.has-note td{border-bottom:0}
 
+  /* ---------------- analysis ---------------- */
+  .an-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px}
+  .an-big{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:34px;font-weight:700;line-height:1.1}
+  .an-big small{display:block;font-family:var(--font);font-size:12px;font-weight:600;color:var(--mut);margin-top:5px}
+  .an-tally{display:flex;align-items:center;gap:14px;font-size:13px;font-weight:700}
+  .an-tally .hint{font-weight:500}
+  .an-flag{
+    display:grid;gap:3px;margin-top:10px;padding:10px 12px;
+    border:1px solid var(--line);border-left-width:2px;border-radius:var(--radius-sm);
+    background:var(--card-2);
+  }
+  .an-flag b{font-size:13px;color:var(--txt)}
+  .an-flag span{font-size:12.5px;color:var(--mut);line-height:1.5}
+  .an-flag.bad{border-left-color:var(--r)}
+  .an-flag.bad b{color:var(--r)}
+  .an-flag.ok{border-left-color:var(--g)}
+  .an-flag.ok b{color:var(--g)}
+  /* Behaviour that happened to pay. Not a pass: green would read as praise
+     for the thing you are trying to stop doing. */
+  .an-flag.warn{border-left-color:var(--y)}
+  .an-flag.warn b{color:var(--y)}
+
   /* ---- balance tally shown after a trade is logged ---- */
   #tally{
     position:fixed;inset:0;z-index:60;display:grid;place-items:center;
@@ -961,6 +983,7 @@
     <button class="tab" type="button" data-tab="journal" role="tab">Log Trade</button>
     <button class="tab on" type="button" data-tab="dash" role="tab">Dashboard</button>
     <button class="tab" type="button" data-tab="risk" role="tab">Risk &amp; Calendar</button>
+    <button class="tab" type="button" data-tab="analysis" role="tab">Analysis</button>
     <button class="tab" type="button" data-tab="setup" role="tab">My Setup</button>
     <button class="tab admin-tab" type="button" data-tab="admin" role="tab">Admin</button>
   </nav>
@@ -1266,6 +1289,59 @@
       <div class="hint" id="calNote" style="margin-top:10px"></div>
     </section>
   </div><!-- /tab-risk -->
+
+  <div class="tabpane" id="tab-analysis" hidden>
+    <div class="pagehead">
+      <div>
+        <div class="crumb">Post-trade engine &middot; <b>Arithmetic only, nothing running in the background</b></div>
+        <h1>Analysis</h1>
+      </div>
+      <div class="head-tools">
+        <label for="anDay" style="margin:0">Session</label>
+        <select id="anDay" style="min-width:150px"></select>
+      </div>
+    </div>
+
+    <section class="card">
+      <h2>Daily review</h2>
+      <p class="hint" style="margin-top:0">One session measured against every trade you logged before it. The
+        comparison is per-day for anything that grows with volume, per-trade for the rest, so a busy day is not
+        flattered by its own busyness.</p>
+      <div id="anVerdict"></div>
+      <div class="scroll" id="anDaily" style="margin-top:14px"></div>
+      <div id="anFlags"></div>
+    </section>
+
+    <section class="card">
+      <h2>Reality check</h2>
+      <p class="hint" style="margin-top:0">Whether the numbers above are worth acting on yet. A run of good results
+        on a small sample looks exactly like an edge, and the only defence is to say out loud how wide the error
+        bars are.</p>
+      <div id="anReality"></div>
+    </section>
+
+    <section class="card">
+      <h2>What if&hellip;</h2>
+      <p class="hint" style="margin-top:0">Each row drops or reprices trades you actually took, and shows what the
+        book would have come to. Nothing here invents a result for a trade you did not take &mdash; there is no
+        honest way to know one &mdash; so read these as <em>what your own habits cost</em>, not as a forecast.</p>
+      <div class="scroll" id="anWhatIf"></div>
+    </section>
+
+    <section class="card">
+      <h2>Edge finder</h2>
+      <p class="hint" style="margin-top:0">Where your results actually separate. Sorted by the gap between best and
+        worst, so the splits that decide your P&amp;L sit at the top. Groups under four trades are left out, and the
+        sample size is printed next to every figure &mdash; a 3-trade &ldquo;edge&rdquo; is noise.</p>
+      <div class="scroll" id="anEdges"></div>
+    </section>
+
+    <section class="card">
+      <h2>Habits &amp; streaks</h2>
+      <div id="anHabits"></div>
+      <div class="scroll" id="anWhen" style="margin-top:14px"></div>
+    </section>
+  </div><!-- /tab-analysis -->
 
   <div class="tabpane" id="tab-setup" hidden>
     <div class="pagehead">

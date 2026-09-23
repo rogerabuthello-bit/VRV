@@ -177,10 +177,14 @@ function showOnboarding(d){
 }
 
 function showTab(n){
-  ['journal','dash','risk','setup','admin'].forEach(t=>{ $('tab-'+t).hidden = t!==n; });
+  // Read the panes off the page rather than a list kept in step by hand: a
+  // new tab added to the markup used to stay hidden until someone remembered
+  // to name it here too.
+  document.querySelectorAll('.tabpane').forEach(el=>{ el.hidden = el.id !== 'tab-'+n; });
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on', b.dataset.tab===n));
   if(n==='admin') loadAdmin();
   if(n==='risk') renderRiskTab();
+  if(n==='analysis') renderAnalysis();
 }
 document.querySelectorAll('[data-tab],[data-goto]').forEach(b=>b.onclick=()=>{ showTab(b.dataset.tab||b.dataset.goto); window.scrollTo({top:0}); });
 $('logout').onclick = signOut;
@@ -320,6 +324,7 @@ const miniBar=v=>{v=+v||0; if(!v) return '–'; return '<span class="cmini" titl
 $('date').value = new Date().toLocaleDateString('en-CA');
 $('trendBy').addEventListener('change',render);
 ['fTrader','fFrom','fTo','fInstr','fStrat','fQual','fTrail','fConf','fSess','fExit','fEmotion','fMistake','fPoi'].forEach(id => $(id).addEventListener('change', render));
+$('anDay').addEventListener('change', () => renderAnalysis());
 $('reset').onclick = () => { ['fFrom','fTo','fInstr','fStrat','fQual','fTrail','fConf','fSess','fExit','fEmotion','fMistake','fPoi'].forEach(i=>$(i).value=''); $('fTrader').value='__ALL__'; render(); };
 $('refresh').onclick = () => load().catch(fail);
 ['entry','sl','fsl','tp','exit','risk','dir'].forEach(id => $(id).addEventListener('input', preview));
@@ -1670,7 +1675,7 @@ function render(){
   group('byPoi',list,t=>t.poi||'Not recorded','Point of interest',false,'poi');
   poiStrategyTable(list);
   mistakeTable(list); ruleTable(list); riskTable(list);
-  leaderboard(); tradesTable(list); renderChrome();
+  leaderboard(); tradesTable(list); renderAnalysis(); renderChrome();
 }
 
 // ---- improvement over time ----
@@ -1843,6 +1848,479 @@ function leaderboard(){
   $('board').innerHTML=rows.length?`<table><tr><th>Member</th><th>Trades</th><th>Win %</th><th>Total R</th><th>Avg R</th><th>PF</th><th>Good %</th><th>Avg conf</th><th>Trailed</th><th>PnL</th><th>Best strategy</th><th>Best session</th></tr>`+rows.map(r=>row(r,false)).join('')+row(team,true)+'</table>':'<span style="color:var(--mut)">No members yet</span>';
   $('board').querySelectorAll('tr[data-t]').forEach(tr=>tr.onclick=()=>setScope(tr.dataset.t));
 }
+/* ==================================================================
+ * ANALYSIS ENGINE
+ *
+ * Arithmetic over trades already logged. No model is called, nothing
+ * runs on a schedule and nothing is stored: the tab recomputes from
+ * the same rows the dashboard is showing, each time it is opened.
+ *
+ * Every what-if below is a RE-SLICE of trades that really happened -
+ * dropping some, or repricing them at a different stake. None of them
+ * invents an outcome for a trade you did not take, because there is no
+ * honest way to know one.
+ * ================================================================ */
+
+const anDays = list => [...new Set(list.map(t => t.date).filter(Boolean))].sort();
+const sumR = l => l.reduce((a, t) => a + (+t.r || 0), 0);
+const sumP = l => l.reduce((a, t) => a + (+t.pnl || 0), 0);
+const median = a => { if(!a.length) return null;
+  const s = [...a].sort((x, y) => x - y), m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m-1] + s[m]) / 2; };
+const brokeRules = t => +t.rulesTotal > 0 && (t.rulesFollowed || []).length < +t.rulesTotal;
+const hasMistake = t => (t.mistakes || []).length > 0;
+/** Average share of each trade's own checklist that was ticked. */
+function adherence(l){
+  const w = l.filter(t => +t.rulesTotal > 0);
+  if(!w.length) return null;
+  return w.reduce((a, t) => a + (t.rulesFollowed || []).length / (+t.rulesTotal), 0) / w.length * 100;
+}
+function localHour(t){
+  const s = fmtIn(t.openedUtc, MYTZ, false);
+  const h = parseInt(String(s).slice(0, 2), 10);
+  return isNaN(h) ? null : h;
+}
+const DOW = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function dowOf(t){
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t.date || '');
+  if(!m) return null;
+  return DOW[new Date(Date.UTC(+m[1], +m[2]-1, +m[3])).getUTCDay()];
+}
+
+/* ------------------------------------------------------------------ 1. day */
+/**
+ * One session against everything before it. The baseline is per-day for
+ * anything that scales with volume (net R, trade count) and per-trade for
+ * everything else, so a busy day is not flattered by its own busyness.
+ */
+function dailyReview(list, day){
+  const cur = list.filter(t => t.date === day);
+  if(!cur.length) return null;
+  const past = list.filter(t => t.date < day);
+  const c = calc(cur), p = calc(past);
+  const pd = anDays(past);
+  const perDayR = pd.length ? sumR(past) / pd.length : null;
+  const perDayN = pd.length ? median(pd.map(d => past.filter(t => t.date === d).length)) : null;
+  const rows = [];
+  const cmp = (label, now, was, hi, unit, note) =>
+    rows.push({ label, now, was, hi, unit: unit || '', note: note || '' });
+
+  cmp('Net R',              sumR(cur),        perDayR,      true,  'R', 'against your average day');
+  cmp('Trades taken',       cur.length,       perDayN,      null,  '',  'against your median day');
+  cmp('Win rate',           c.winRate,        p.winRate,    true,  '%');
+  cmp('Expectancy',         c.avgR,           p.avgR,       true,  'R', 'per trade');
+  cmp('Profit factor',      c.pf === Infinity ? null : c.pf,
+                            p.pf === Infinity ? null : p.pf, true,  '');
+  cmp('Good trades',        c.discipline,     p.discipline, true,  '%', 'your own grading');
+  cmp('Rules ticked',       adherence(cur),   adherence(past), true, '%');
+  cmp('Avg risk',           c.avgRiskPct,     p.avgRiskPct, null,  '%', 'your plan is ' + fmt(MYRISK, 2) + '%');
+  cmp('Avg confidence',     c.avgConf,        p.avgConf,    true,  '');
+  cmp('Avg hold',           c.avgHold,        p.avgHold,    null,  'min');
+  cmp('Commission',         c.commission,     pd.length ? p.commission / pd.length : null, false, '', 'per day');
+  return { day, cur, past, c, p, rows, flags: dayFlags(cur, list, day) };
+}
+
+/**
+ * The behavioural reads. These are the ones worth catching, because they are
+ * invisible in a total: the day can finish green and still contain the habit
+ * that empties the account next week.
+ */
+function dayFlags(cur, all, day){
+  const out = [];
+  // 'bad' | 'warn' | 'ok'. warn is for a habit that happened to pay: marking
+  // it green would congratulate the trader for the thing costing them money.
+  const flag = (kind, head, body) => out.push({ kind, head, body });
+  const byOpen = [...cur].sort((a, b) => String(a.openedUtc).localeCompare(String(b.openedUtc)));
+
+  // Straight back in after a loss.
+  const REVENGE_MIN = 15;
+  const quick = [];
+  byOpen.forEach(t => {
+    const prior = byOpen.filter(x => x.closedUtc && x.closedUtc < t.openedUtc && +x.r < 0);
+    if(!prior.length) return;
+    const last = prior[prior.length - 1];
+    const gap = (new Date(t.openedUtc) - new Date(last.closedUtc)) / 60000;
+    if(gap >= 0 && gap <= REVENGE_MIN) quick.push(t);
+  });
+  if(quick.length){
+    const r = sumR(quick);
+    flag(r < 0 ? 'bad' : 'warn', `${quick.length} trade${quick.length>1?'s':''} taken within ${REVENGE_MIN} min of a loss`,
+      `They came to ${fmt(r)}R between them. ` + (r < 0
+        ? 'Re-entering straight after a loss cost you on this day.'
+        : 'They paid this time, which is not the same as it being a good habit.'));
+  }
+
+  // Betting bigger after a loss.
+  const after = (sign) => {
+    const v = [];
+    byOpen.forEach((t, i) => {
+      const prev = byOpen.slice(0, i).filter(x => x.closedUtc && x.closedUtc < t.openedUtc);
+      if(!prev.length) return;
+      const last = prev[prev.length - 1];
+      if(sign < 0 ? +last.r < 0 : +last.r > 0) v.push(+t.riskPct);
+    });
+    const f = v.filter(x => x > 0);
+    return f.length ? f.reduce((a, b) => a + b, 0) / f.length : null;
+  };
+  const afterLoss = after(-1), afterWin = after(1);
+  if(afterLoss != null && afterWin != null && afterLoss > afterWin * 1.25){
+    flag('bad', 'Your stake went up after losses',
+      `${fmt(afterLoss,2)}% of the account after a loss against ${fmt(afterWin,2)}% after a win. `
+      + 'Size drifting with the last result is how one bad session becomes a bad month.');
+  }
+
+  // Does the day decay as it goes on.
+  if(byOpen.length >= 6){
+    const h = Math.floor(byOpen.length / 2);
+    const a = sumR(byOpen.slice(0, h)) / h, b = sumR(byOpen.slice(h)) / (byOpen.length - h);
+    if(a - b >= 0.25) flag('bad', 'The session got worse as it went on',
+      `First half ${fmt(a)}R a trade, second half ${fmt(b)}R. Stopping earlier would have kept ${fmt(a-b)}R a trade.`);
+    else if(b - a >= 0.25) flag('ok', 'You traded better later in the session',
+      `First half ${fmt(a)}R a trade, second half ${fmt(b)}R.`);
+  }
+
+  // Plan breaches and self-graded mistakes.
+  const over = cur.filter(t => +t.riskPct > MYRISK * 1.1);
+  if(over.length) flag('bad', `${over.length} trade${over.length>1?'s':''} over your risk plan`,
+    `Largest was ${fmt(Math.max(...over.map(t => +t.riskPct)), 2)}% against a plan of ${fmt(MYRISK,2)}%.`);
+  const broke = cur.filter(brokeRules);
+  if(broke.length) flag('bad', `${broke.length} trade${broke.length>1?'s':''} taken with the checklist unfinished`,
+    `They came to ${fmt(sumR(broke))}R. The ones you completed came to ${fmt(sumR(cur.filter(t => !brokeRules(t))))}R.`);
+  const mis = {};
+  cur.forEach(t => (t.mistakes || []).forEach(m => { mis[m] = (mis[m] || 0) + 1; }));
+  const misTop = Object.entries(mis).sort((a, b) => b[1] - a[1]);
+  if(misTop.length) flag('bad', 'Mistakes you tagged',
+    misTop.map(([m, n]) => `${esc(m)} (${n})`).join(' · '));
+
+  // One trade doing all the damage, or all the good.
+  if(cur.length >= 3){
+    const worst = [...cur].sort((a, b) => (+a.r) - (+b.r))[0];
+    const rest = sumR(cur) - (+worst.r || 0);
+    if(+worst.r < 0 && sumR(cur) < 0 && rest > 0)
+      flag('bad', 'One trade turned the day red',
+        `Without ${esc(worst.instrument)} at ${fmt(worst.r)}R the day is ${fmt(rest)}R.`);
+    const best = [...cur].sort((a, b) => (+b.r) - (+a.r))[0];
+    const restB = sumR(cur) - (+best.r || 0);
+    if(+best.r > 0 && sumR(cur) > 0 && restB < 0)
+      flag('warn', 'One trade carried the day',
+        `Without ${esc(best.instrument)} at ${fmt(best.r)}R the day is ${fmt(restB)}R. `
+        + 'A green day resting on a single trade is not a repeatable one.');
+  }
+  if(!out.length) flag('ok', 'Nothing stood out', 'No plan breaches, no revenge entries, no size drift.');
+  return out;
+}
+
+/* -------------------------------------------------------------- 2. what if */
+/**
+ * Each row drops or reprices real trades. The money column uses the P&L
+ * actually booked, so a row is only shown when every trade it touches has one.
+ */
+function whatIf(list){
+  const base = { r: sumR(list), pnl: sumP(list), n: list.length };
+  const out = [];
+  const keep = (name, why, kept) => {
+    if(kept.length === list.length || !kept.length) return;
+    out.push({ name, why, n: kept.length,
+      r: sumR(kept), pnl: sumP(kept),
+      dr: sumR(kept) - base.r, dpnl: sumP(kept) - base.pnl });
+  };
+
+  keep('You had skipped the trades that broke your checklist',
+       `${list.filter(brokeRules).length} dropped`, list.filter(t => !brokeRules(t)));
+  keep('You had skipped every trade you tagged a mistake on',
+       `${list.filter(hasMistake).length} dropped`, list.filter(t => !hasMistake(t)));
+  keep('You had only taken your 4s and 5s for confidence',
+       `${list.filter(t => +t.confidence && +t.confidence < 4).length} dropped`,
+       list.filter(t => !+t.confidence || +t.confidence >= 4));
+  keep('You had never traded over your risk plan',
+       `${list.filter(t => +t.riskPct > MYRISK * 1.1).length} dropped`,
+       list.filter(t => !(+t.riskPct > MYRISK * 1.1)));
+
+  const worst = [...list].sort((a, b) => (+a.r) - (+b.r))[0];
+  if(worst) keep('Your single worst trade had not happened',
+    `${esc(worst.instrument)} on ${esc(worst.date)}, ${fmt(worst.r)}R`, list.filter(t => t !== worst));
+  const best = [...list].sort((a, b) => (+b.r) - (+a.r))[0];
+  if(best) keep('Your single best trade had not happened',
+    `${esc(best.instrument)} on ${esc(best.date)}, ${fmt(best.r)}R - how much rests on one trade`,
+    list.filter(t => t !== best));
+
+  // Worst slice by dimension, dropped.
+  [['instrument', t => t.instrument, 'instrument'],
+   ['strategy',   t => t.strategy,   'strategy'],
+   ['session',    t => t.session,    'session'],
+   ['point of interest', t => t.poi, 'POI']].forEach(([, keyFn, word]) => {
+    const g = {};
+    list.forEach(t => { const k = keyFn(t); if(k) (g[k] = g[k] || []).push(t); });
+    const rows = Object.entries(g).filter(([, v]) => v.length >= 4)
+      .map(([k, v]) => ({ k, r: sumR(v) })).sort((a, b) => a.r - b.r);
+    if(rows.length > 1 && rows[0].r < 0)
+      keep(`You had left the ${esc(rows[0].k)} ${word} alone`,
+           `${g[rows[0].k].length} trades, ${fmt(rows[0].r)}R`,
+           list.filter(t => keyFn(t) !== rows[0].k));
+  });
+
+  // Same stake every time: what the edge is worth with sizing taken out of it.
+  const risks = list.map(t => +t.risk).filter(x => x > 0);
+  const flat = median(risks);
+  if(flat && risks.length >= Math.max(3, list.length * 0.6)){
+    const even = base.r * flat;
+    out.push({ name: 'Every trade had risked the same amount',
+      why: `at your median stake of ${fmt(flat)} - this is your edge with position sizing taken out`,
+      n: list.length, r: base.r, pnl: even, dr: 0, dpnl: even - base.pnl, flat: true });
+  }
+  return { base, rows: out.sort((a, b) => b.dr - a.dr) };
+}
+
+/* ------------------------------------------------------------- 3. the edge */
+/** Best and worst slice of each dimension, with the sample size next to it. */
+function edgeFinder(list, minN){
+  minN = minN || 4;
+  const dims = [
+    ['Instrument', t => t.instrument],
+    ['Strategy',   t => t.strategy],
+    ['Point of interest', t => t.poi],
+    ['Session',    t => t.session],
+    ['Direction',  t => t.direction],
+    ['Day',        dowOf],
+    ['Hour opened', t => { const h = localHour(t); return h == null ? null : String(h).padStart(2,'0') + ':00'; }],
+    ['Confidence', t => +t.confidence ? CONF[+t.confidence] : null],
+    ['How it ended', t => exitOf(t)],
+    ['Stop moved', t => t.trailed === 'Yes' ? 'Trailed' : 'Left alone'],
+    ['Hold time',  t => { const h = holdMin(t); if(h == null) return null;
+                          return h < 15 ? 'Under 15 min' : h < 60 ? '15-60 min' : h < 240 ? '1-4 hours' : 'Over 4 hours'; }],
+  ];
+  return dims.map(([label, keyFn]) => {
+    const g = {};
+    list.forEach(t => { const k = keyFn(t); if(k) (g[k] = g[k] || []).push(t); });
+    const rows = Object.entries(g).map(([k, v]) => ({ k, n: v.length, r: sumR(v), avg: sumR(v)/v.length }))
+      .filter(x => x.n >= minN).sort((a, b) => b.avg - a.avg);
+    if(rows.length < 2) return null;
+    return { label, best: rows[0], worst: rows[rows.length - 1], spread: rows[0].avg - rows[rows.length-1].avg };
+  }).filter(Boolean).sort((a, b) => b.spread - a.spread);
+}
+
+/* ---------------------------------------------------------- 4. the habits */
+function habits(list){
+  const byTime = [...list].sort((a, b) => String(a.openedUtc).localeCompare(String(b.openedUtc)));
+  let run = 0, sign = 0, bestW = 0, bestL = 0;
+  byTime.forEach(t => {
+    const s = +t.r > 0 ? 1 : +t.r < 0 ? -1 : 0;
+    if(s === 0) return;
+    run = s === sign ? run + 1 : 1; sign = s;
+    if(s > 0) bestW = Math.max(bestW, run); else bestL = Math.max(bestL, run);
+  });
+  const days = anDays(list);
+  const dayR = days.map(d => ({ d, r: sumR(list.filter(t => t.date === d)) }));
+  const green = dayR.filter(x => x.r > 0).length;
+  let eq = 0, peak = 0, dd = 0, ddAt = null;
+  dayR.forEach(x => { eq += x.r; if(eq > peak) peak = eq;
+    if(peak - eq > dd){ dd = peak - eq; ddAt = x.d; } });
+  return {
+    days: days.length, green, greenPct: days.length ? green / days.length * 100 : null,
+    bestW, bestL, curRun: run, curSign: sign,
+    bestDay: dayR.slice().sort((a,b)=>b.r-a.r)[0],
+    worstDay: dayR.slice().sort((a,b)=>a.r-b.r)[0],
+    maxDD: dd, maxDDAt: ddAt, dayR,
+  };
+}
+
+/* --------------------------------------------------------- 5. the caveats */
+/**
+ * The part a dashboard usually leaves out. Three numbers decide whether any
+ * of the above is worth acting on: how much of your expectancy is noise, what
+ * win rate your own payoff ratio actually requires, and whether you are
+ * closing winners before the target you set yourself.
+ */
+function realityCheck(list){
+  const rs = list.map(t => +t.r || 0);
+  const n = rs.length;
+  const out = { n };
+  if(n >= 2){
+    const m = rs.reduce((a, b) => a + b, 0) / n;
+    const sd = Math.sqrt(rs.reduce((a, x) => a + (x - m) ** 2, 0) / (n - 1));
+    const se = sd / Math.sqrt(n);
+    out.expectancy = m; out.se = se;
+    // Two standard errors either side is the rough 95% band.
+    out.lo = m - 2 * se; out.hi = m + 2 * se;
+    out.proven = out.lo > 0 || out.hi < 0;
+    // Trades needed before the band clears zero, at the scatter seen so far.
+    out.needed = m !== 0 ? Math.ceil((2 * sd / Math.abs(m)) ** 2) : null;
+  }
+  const wins = list.filter(t => +t.r > 0), losses = list.filter(t => +t.r < 0);
+  if(wins.length && losses.length){
+    const aw = wins.reduce((a, t) => a + +t.r, 0) / wins.length;
+    const al = Math.abs(losses.reduce((a, t) => a + +t.r, 0) / losses.length);
+    out.avgWin = aw; out.avgLoss = al; out.payoff = al ? aw / al : null;
+    out.breakEven = al ? al / (aw + al) * 100 : null;
+    out.actualRate = wins.length / (wins.length + losses.length) * 100;
+  }
+  // Winners closed before the target that was set on them.
+  const planned = wins.filter(t => +t.plannedRR > 0);
+  if(planned.length >= 3){
+    out.plannedOnWins = planned.reduce((a, t) => a + +t.plannedRR, 0) / planned.length;
+    out.gotOnWins = planned.reduce((a, t) => a + +t.r, 0) / planned.length;
+    out.shortBy = out.plannedOnWins - out.gotOnWins;
+    out.shortN = planned.length;
+  }
+  return out;
+}
+
+function renderReality(list){
+  const q = realityCheck(list);
+  const box = [];
+  if(q.expectancy == null){
+    $('anReality').innerHTML = '<span style="color:var(--mut)">Two trades needed before this says anything.</span>';
+    return;
+  }
+  box.push(`<div class="an-flag ${q.proven ? 'ok' : 'bad'}"><b>`
+    + `Expectancy ${fmt(q.expectancy)}R per trade, give or take ${fmt(2 * q.se)}R</b><span>`
+    + (q.proven
+        ? `Across ${q.n} trades that band sits entirely ${q.expectancy > 0 ? 'above' : 'below'} zero, `
+          + 'so the edge is unlikely to be luck.'
+        : `Across ${q.n} trades the band runs ${fmt(q.lo)}R to ${fmt(q.hi)}R, which straddles zero. `
+          + 'On this sample you cannot yet tell this apart from a coin toss'
+          + (q.needed ? `; around ${q.needed} trades at this scatter would settle it.` : '.'))
+    + '</span></div>');
+  if(q.breakEven != null){
+    const ok = q.actualRate >= q.breakEven;
+    box.push(`<div class="an-flag ${ok ? 'ok' : 'bad'}"><b>`
+      + `You need to win ${fmt(q.breakEven, 1)}% and you win ${fmt(q.actualRate, 1)}%</b><span>`
+      + `Your winners average ${fmt(q.avgWin)}R and your losers ${fmt(q.avgLoss)}R, a payoff of `
+      + `${fmt(q.payoff)} to 1. At that payoff ${fmt(q.breakEven, 1)}% is break-even, and you are `
+      + `${ok ? 'above it by ' + fmt(q.actualRate - q.breakEven, 1) : 'under it by ' + fmt(q.breakEven - q.actualRate, 1)}`
+      + ' points.</span></div>');
+  }
+  if(q.shortBy != null){
+    const cut = q.shortBy > 0.25;
+    box.push(`<div class="an-flag ${cut ? 'bad' : 'ok'}"><b>`
+      + `Winners ${cut ? 'closed short of' : 'held to'} their target</b><span>`
+      + `On ${q.shortN} winning trades you aimed for ${fmt(q.plannedOnWins)}R and took ${fmt(q.gotOnWins)}R`
+      + (cut ? `, leaving ${fmt(q.shortBy)}R a trade on the table against your own plan.`
+             : '. You are taking what you set out to take.')
+      + '</span></div>');
+  }
+  $('anReality').innerHTML = box.join('');
+}
+
+/* ------------------------------------------------------------- rendering */
+function fillAnalysisDays(list){
+  const days = anDays(list).reverse();
+  const cur = $('anDay').value;
+  $('anDay').innerHTML = days.map(d => `<option>${esc(d)}</option>`).join('');
+  if(days.includes(cur)) $('anDay').value = cur;
+}
+
+function renderAnalysis(){
+  const list = filtered();
+  fillAnalysisDays(list);
+  if(!list.length){
+    ['anVerdict','anDaily','anFlags','anReality','anWhatIf','anEdges','anHabits','anWhen']
+      .forEach(id => { $(id).innerHTML = ''; });
+    $('anVerdict').innerHTML = '<span style="color:var(--mut)">No trades in this view yet.</span>';
+    return;
+  }
+  renderDaily(list, $('anDay').value || anDays(list).slice(-1)[0]);
+  renderReality(list);
+  renderWhatIf(list);
+  renderEdges(list);
+  renderHabits(list);
+}
+
+function renderDaily(list, day){
+  const d = dailyReview(list, day);
+  if(!d){ $('anVerdict').innerHTML = '<span style="color:var(--mut)">No trades on that day.</span>';
+    $('anDaily').innerHTML = ''; $('anFlags').innerHTML = ''; return; }
+
+  const net = sumR(d.cur), money = sumP(d.cur);
+  const better = d.rows.filter(r => r.hi !== null && r.now != null && r.was != null
+    && (r.hi ? r.now > r.was : r.now < r.was)).length;
+  const worse = d.rows.filter(r => r.hi !== null && r.now != null && r.was != null
+    && (r.hi ? r.now < r.was : r.now > r.was)).length;
+  $('anVerdict').innerHTML =
+    `<div class="an-head">`
+    + `<div class="an-big ${cls(net)}">${fmt(net)}R<small>${d.cur.length} trade${d.cur.length>1?'s':''} · ${fmt(money)} ${esc(d.cur[0].currency||'')}</small></div>`
+    + `<div class="an-tally"><span class="pos">${better} better</span><span class="neg">${worse} worse</span>`
+    + `<span class="hint">vs your ${d.past.length} earlier trade${d.past.length===1?'':'s'}</span></div></div>`;
+
+  const cell = (r, v) => {
+    if(v == null) return '–';
+    if(r.unit === 'min') return fmtDur(v);
+    return fmt(v, r.unit === '%' ? 1 : 2) + r.unit;
+  };
+  $('anDaily').innerHTML = '<table><tr><th>Measure</th><th>This session</th><th>Before</th><th>Change</th></tr>'
+    + d.rows.map(r => {
+      let arrow = '–', k = '';
+      if(r.now != null && r.was != null){
+        const diff = r.now - r.was;
+        const shown = r.unit === 'min' ? fmtDur(Math.abs(diff)) : fmt(Math.abs(diff), r.unit === '%' ? 1 : 2) + r.unit;
+        arrow = (diff > 0 ? '▲ ' : diff < 0 ? '▼ ' : '') + shown;
+        if(r.hi !== null && Math.abs(diff) > 1e-9) k = (r.hi ? diff > 0 : diff < 0) ? 'pos' : 'neg';
+      }
+      return `<tr><td>${esc(r.label)}${r.note ? ` <span class="hint">${esc(r.note)}</span>` : ''}</td>`
+        + `<td>${cell(r, r.now)}</td><td>${cell(r, r.was)}</td><td class="${k}">${arrow}</td></tr>`;
+    }).join('') + '</table>';
+
+  $('anFlags').innerHTML = d.flags.map(f =>
+    `<div class="an-flag ${f.kind}"><b>${f.head}</b><span>${f.body}</span></div>`).join('');
+}
+
+function renderWhatIf(list){
+  const w = whatIf(list);
+  if(!w.rows.length){ $('anWhatIf').innerHTML =
+    '<span style="color:var(--mut)">Not enough variation in these trades to run a counterfactual.</span>'; return; }
+  const ccy = esc(list.find(t => t.currency)?.currency || '');
+  $('anWhatIf').innerHTML =
+    `<table><tr><th>If…</th><th>Trades</th><th>Total R</th><th>Change</th><th>Money</th></tr>`
+    + `<tr class="foot-row"><td>What actually happened</td><td>${w.base.n}</td>`
+    + `<td class="${cls(w.base.r)}">${fmt(w.base.r)}</td><td>–</td>`
+    + `<td class="${cls(w.base.pnl)}">${fmt(w.base.pnl)} ${ccy}</td></tr>`
+    + w.rows.map(r => `<tr><td>${r.name}<span class="hint"> ${r.why}</span></td>`
+      + `<td>${r.n}</td><td class="${cls(r.r)}">${fmt(r.r)}</td>`
+      + `<td class="${cls(r.dr)}">${r.flat ? '–' : (r.dr >= 0 ? '+' : '') + fmt(r.dr) + 'R'}</td>`
+      + `<td class="${cls(r.dpnl)}">${(r.dpnl >= 0 ? '+' : '') + fmt(r.dpnl)} ${ccy}</td></tr>`).join('')
+    + '</table>';
+}
+
+function renderEdges(list){
+  const e = edgeFinder(list);
+  if(!e.length){ $('anEdges').innerHTML =
+    '<span style="color:var(--mut)">Not enough trades yet - four in a group before it is worth reading.</span>'; return; }
+  $('anEdges').innerHTML = '<table><tr><th>Split by</th><th>Best</th><th>R/trade</th>'
+    + '<th>Worst</th><th>R/trade</th><th>Spread</th></tr>'
+    + e.map(x => `<tr><td>${esc(x.label)}</td>`
+      + `<td>${esc(x.best.k)} <span class="hint">n=${x.best.n}</span></td>`
+      + `<td class="${cls(x.best.avg)}">${fmt(x.best.avg)}</td>`
+      + `<td>${esc(x.worst.k)} <span class="hint">n=${x.worst.n}</span></td>`
+      + `<td class="${cls(x.worst.avg)}">${fmt(x.worst.avg)}</td>`
+      + `<td>${fmt(x.spread)}R</td></tr>`).join('') + '</table>';
+}
+
+function renderHabits(list){
+  const h = habits(list);
+  const c = (l, v, k) => `<div class="stat"><div class="l">${l}</div><div class="v ${k||''}">${v}</div></div>`;
+  $('anHabits').innerHTML = '<div class="grid">'
+    + c('Sessions traded', h.days)
+    + c('Green sessions', h.greenPct == null ? '–' : fmt(h.greenPct, 0) + '%', h.greenPct >= 50 ? 'pos' : 'neg')
+    + c('Longest win run', h.bestW, 'pos')
+    + c('Longest losing run', h.bestL, 'neg')
+    + c('Running now', (h.curSign > 0 ? h.curRun + ' win' : h.curSign < 0 ? h.curRun + ' loss' : '–')
+        + (h.curRun > 1 ? 'es' : ''), h.curSign > 0 ? 'pos' : h.curSign < 0 ? 'neg' : '')
+    + c('Best session', h.bestDay ? fmt(h.bestDay.r) + 'R' : '–', 'pos')
+    + c('Worst session', h.worstDay ? fmt(h.worstDay.r) + 'R' : '–', 'neg')
+    + c('Deepest drawdown', fmt(h.maxDD) + 'R', h.maxDD > 0 ? 'neg' : '')
+    + '</div>'
+    + (h.maxDDAt ? `<div class="hint" style="margin-top:10px">Deepest drawdown bottomed out on ${esc(h.maxDDAt)}.</div>` : '');
+
+  const rows = h.dayR.slice().reverse();
+  $('anWhen').innerHTML = '<table><tr><th>Session</th><th>Trades</th><th>Net R</th><th>Running R</th></tr>'
+    + (() => { let run = sumR(list); return rows.map(x => {
+        const n = list.filter(t => t.date === x.d).length;
+        const at = run; run -= x.r;
+        return `<tr><td>${esc(x.d)}</td><td>${n}</td><td class="${cls(x.r)}">${fmt(x.r)}</td>`
+          + `<td class="${cls(at)}">${fmt(at)}</td></tr>`;
+      }).join(); })() + '</table>';
+}
+
 function tradesTable(list){
   const me=$('me').value.trim().toLowerCase(), rows=[...list].reverse();
   $('tbl').innerHTML=rows.length?`<table><tr><th>Date</th><th>Time (UTC)</th><th>Time (${esc(MYTZ)})</th><th>Closed (${esc(MYTZ)})</th><th>Held</th><th>Session</th><th>Trader</th><th>Instrument</th><th>Dir</th><th>Strategy</th><th>POI</th><th>Lots</th><th>Risk</th><th>Risk %</th><th>Entry</th><th>Init SL</th><th>Final SL</th><th>Init TP</th><th>Exit</th><th>How it ended</th><th>Plan RR</th><th>R</th><th>PnL</th><th>Result</th><th>Quality</th><th>Conf</th><th>Shots</th><th></th></tr>`+
